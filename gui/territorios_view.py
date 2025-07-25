@@ -1,20 +1,14 @@
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
-    QTableWidget, QTableWidgetItem, QMessageBox, QInputDialog
+    QTableWidget, QTableWidgetItem, QInputDialog, QMessageBox
 )
 from modules.territorios import (
     listar_territorios, adicionar_territorio, atualizar_territorio,
     remover_territorio, buscar_por_nome, territorio_existe
 )
 from scraping.territorios_scraper import buscar_territorios
-from gui.notificacoes import sucesso, erro, aviso
-
-""" 
-- adicionar toast_notification
-- adicionar logger
-- adicionar Barra de Status
-- adicionar notificações
-"""
+from gui.toast_notification import ToastNotification
+from utils.logger import log
 
 class TerritoriosView(QWidget):
     def __init__(self):
@@ -58,19 +52,37 @@ class TerritoriosView(QWidget):
         botoes_layout.addWidget(self.btn_importar)
         self.layout.addLayout(botoes_layout)
 
+        self.parent_window = self.parentWidget()
+
         self.carregar_todos()
+
+    def show_toast(self, mensagem, tipo="info"):
+        if self.parent_window and hasattr(self.parent_window, "show_toast"):
+            self.parent_window.show_toast(mensagem, tipo)
+        else:
+            toast = ToastNotification(mensagem, tipo, parent=self)
+            toast.show()
+
+    def atualizar_status(self, mensagem, tipo="info"):
+        if self.parent_window and hasattr(self.parent_window, "atualizar_status"):
+            self.parent_window.atualizar_status(mensagem, tipo)
 
     def carregar_todos(self):
         dados = listar_territorios()
         self.mostrar_tabela(dados)
+        self.show_toast("Lista de territórios carregada.", "info")
+        self.atualizar_status("Territórios carregados com sucesso.")
 
     def buscar_territorios(self):
         termo = self.busca_input.text().strip()
         if termo:
             dados = buscar_por_nome(termo)
+            log(f"Busca por '{termo}' em territórios.")
         else:
             dados = listar_territorios()
         self.mostrar_tabela(dados)
+        self.show_toast("Busca concluída.", "info")
+        self.atualizar_status("Busca de territórios executada.")
 
     def mostrar_tabela(self, dados):
         self.tabela.clear()
@@ -86,7 +98,7 @@ class TerritoriosView(QWidget):
     def get_linha_selecionada(self):
         linha = self.tabela.currentRow()
         if linha < 0:
-            QMessageBox.warning(self, "Aviso", "Selecione uma linha.")
+            self.show_toast("Selecione uma linha primeiro.", "aviso")
             return None
         return linha
 
@@ -94,10 +106,14 @@ class TerritoriosView(QWidget):
         nome, ok = QInputDialog.getText(self, "Novo Território", "Nome:")
         if ok and nome.strip():
             if territorio_existe(nome.strip()):
-                QMessageBox.warning(self, "Erro", "Território já existe.")
+                self.show_toast("Território já existe.", "erro")
+                log(f"Tentativa de adicionar território duplicado: {nome}", "erro")
                 return
             adicionar_territorio(nome.strip())
+            log(f"Território adicionado: {nome}")
             self.carregar_todos()
+            self.show_toast("Território adicionado com sucesso.", "sucesso")
+            self.atualizar_status(f"Território '{nome}' adicionado.", "sucesso")
 
     def atualizar(self):
         linha = self.get_linha_selecionada()
@@ -109,7 +125,9 @@ class TerritoriosView(QWidget):
         status = self.tabela.item(linha, 3).text()
         obs = self.tabela.item(linha, 4).text()
         atualizar_territorio(id_, nome=nome, url=url, status=status, observacoes=obs)
-        QMessageBox.information(self, "Atualizado", "Território atualizado com sucesso.")
+        log(f"Território atualizado: ID={id_}, Nome={nome}")
+        self.show_toast("Território atualizado com sucesso.", "sucesso")
+        self.atualizar_status(f"Território '{nome}' atualizado.", "sucesso")
 
     def remover(self):
         linha = self.get_linha_selecionada()
@@ -120,7 +138,10 @@ class TerritoriosView(QWidget):
         confirma = QMessageBox.question(self, "Confirmar", f"Deseja remover '{nome}'?")
         if confirma == QMessageBox.Yes:
             remover_territorio(id_)
+            log(f"Território removido: ID={id_}, Nome={nome}")
             self.carregar_todos()
+            self.show_toast(f"'{nome}' removido com sucesso.", "sucesso")
+            self.atualizar_status(f"Território '{nome}' removido.", "aviso")
 
     def importar(self):
         territorios = buscar_territorios()
@@ -129,5 +150,7 @@ class TerritoriosView(QWidget):
             if not territorio_existe(t["nome"]):
                 adicionar_territorio(t["nome"], url=t["url"])
                 novos += 1
-        QMessageBox.information(self, "Importação", f"{novos} territórios novos adicionados.")
+        log(f"Importação de territórios da web: {novos} novos adicionados.")
         self.carregar_todos()
+        self.show_toast(f"{novos} novos territórios adicionados.", "sucesso" if novos else "info")
+        self.atualizar_status(f"Importação concluída ({novos} novos).", "info")

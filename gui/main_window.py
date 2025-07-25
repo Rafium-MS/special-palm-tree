@@ -8,7 +8,6 @@ from gui.relatorio_view import RelatorioView
 from gui.sugestoes_view import SugestoesView
 from gui.toast_notification import ToastNotification
 from gui.logs_view import LogsView
-from gui.logs_view import LogsView
 
 """ 
 - adicionar toast_notification

@@ -10,11 +10,6 @@ from reportlab.lib.units import cm
 from datetime import datetime
 from database.db_manager import get_connection
 import pandas as pd
-from datetime import datetime
-from reportlab.lib.pagesizes import A4
-from reportlab.lib import colors
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-from reportlab.lib.styles import getSampleStyleSheet
 
 # 🔹 Gerar relatório de designações por mês e ano
 def gerar_relatorio_mensal(mes, ano):
@@ -71,43 +66,6 @@ def relatorio_por_territorio(territorio_id):
     colunas = ["Território", "Grupo", "Início", "Fim", "Status"]
     df = pd.DataFrame(dados, columns=colunas)
     return df
-def exportar_relatorio_pdf(mes, ano, caminho_arquivo=None):
-    df = gerar_relatorio_mensal(mes, ano)
-    if df.empty:
-        print("Nenhuma designação encontrada para esse período.")
-        return None
-
-    if not caminho_arquivo:
-        caminho_arquivo = f"relatorio_{ano}_{int(mes):02d}.pdf"
-
-    # Documento
-    doc = SimpleDocTemplate(caminho_arquivo, pagesize=A4)
-    elementos = []
-    estilos = getSampleStyleSheet()
-
-    # Título
-    titulo = Paragraph(f"Relatório de Designações – {int(mes):02d}/{ano}", estilos['Title'])
-    elementos.append(titulo)
-    elementos.append(Spacer(1, 12))
-
-    # Tabela
-    dados = [df.columns.tolist()] + df.values.tolist()
-    tabela = Table(dados, repeatRows=1)
-
-    tabela.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
-        ("GRID", (0, 0), (-1, -1), 0.5, colors.black),
-        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-        ("FONTSIZE", (0, 0), (-1, -1), 9),
-        ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
-        ("TOPPADDING", (0, 0), (-1, 0), 6),
-    ]))
-
-    elementos.append(tabela)
-
-    doc.build(elementos)
-    print(f"Relatório PDF gerado com sucesso: {caminho_arquivo}")
-    return caminho_arquivo
 
 
 def cabecalho_rodape(canvas_obj, doc, mes, ano, logo_path="assets/logo.png"):
