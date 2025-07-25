@@ -57,10 +57,9 @@ class TerritoriosView(QWidget):
         self.layout.addLayout(botoes_layout)
         self.carregar_todos()
 
-
     def show_toast(self, mensagem, tipo="info"):
         parent = self.window()
-        if parent and hasattr(parent, "show_toast"):
+        if isinstance(parent, QWidget) and parent != self and hasattr(parent, "show_toast"):
             parent.show_toast(mensagem, tipo)
         else:
             toast = ToastNotification(mensagem, tipo, parent=self)
@@ -68,7 +67,7 @@ class TerritoriosView(QWidget):
 
     def atualizar_status(self, mensagem, tipo="info"):
         parent = self.window()
-        if parent and hasattr(parent, "atualizar_status"):
+        if isinstance(parent, QWidget) and parent != self and hasattr(parent, "atualizar_status"):
             parent.atualizar_status(mensagem, tipo)
 
     def carregar_todos(self):
