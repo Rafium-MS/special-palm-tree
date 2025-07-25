@@ -1,19 +1,48 @@
-from modules.territorios import adicionar_territorio, listar_territorios, atualizar_territorio, remover_territorio, buscar_por_nome
+import unittest
+from database.db_manager import init_db, get_connection
+from modules.territorios import adicionar_territorio, obter_territorio_completo
+from modules.ruas import adicionar_rua
+from modules.numeros import adicionar_numero
 
-# Criar
-adicionar_territorio("Território 123", url="http://exemplo.com/t123")
+class TestTerritorioCompleto(unittest.TestCase):
+    def setUp(self):
+        init_db()
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute('DELETE FROM numeros')
+        cur.execute('DELETE FROM ruas')
+        cur.execute('DELETE FROM territorios')
+        conn.commit()
+        conn.close()
 
-# Listar
-for t in listar_territorios():
-    print(t)
+        adicionar_territorio('Territorio Teste')
+        conn = get_connection()
+        self.territorio_id = conn.cursor().execute(
+            "SELECT id FROM territorios WHERE nome=?",
+            ('Territorio Teste',)
+        ).fetchone()[0]
+        conn.close()
 
-# Atualizar
-atualizar_territorio(1, status="designado", observacoes="Entregue ao Grupo 1")
+        adicionar_rua(self.territorio_id, 'Rua X')
+        conn = get_connection()
+        self.rua_id = conn.cursor().execute(
+            "SELECT id FROM ruas WHERE territorio_id=?",
+            (self.territorio_id,)
+        ).fetchone()[0]
+        conn.close()
 
-# Buscar
-resultados = buscar_por_nome("123")
-for r in resultados:
-    print(r)
+        adicionar_numero(self.rua_id, '1')
+        adicionar_numero(self.rua_id, '2')
 
-# Remover
-remover_territorio(1)
+    def test_hierarquia_completa(self):
+        dados = obter_territorio_completo(self.territorio_id)
+        self.assertIsNotNone(dados)
+        self.assertEqual(dados['id'], self.territorio_id)
+        self.assertEqual(len(dados['ruas']), 1)
+        rua = dados['ruas'][0]
+        self.assertEqual(rua['nome'], 'Rua X')
+        numeros = sorted(n['numero'] for n in rua['numeros'])
+        self.assertListEqual(numeros, ['1', '2'])
+
+if __name__ == '__main__':
+    unittest.main()

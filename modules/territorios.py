@@ -73,3 +73,51 @@ def territorio_existe(nome):
     count = cur.fetchone()[0]
     conn.close()
     return count > 0
+# 🔹 Obter território completo com ruas e números
+def obter_territorio_completo(territorio_id):
+    """Retorna um dicionário com o território, suas ruas e números."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT t.id, t.nome, t.url, t.status, t.observacoes,
+               r.id as rua_id, r.nome as rua_nome,
+               n.id as numero_id, n.numero, n.data
+        FROM territorios t
+        LEFT JOIN ruas r ON r.territorio_id = t.id
+        LEFT JOIN numeros n ON n.rua_id = r.id
+        WHERE t.id = ?
+        ORDER BY r.nome, n.numero
+        """,
+        (territorio_id,)
+    )
+    linhas = cur.fetchall()
+    conn.close()
+
+    if not linhas:
+        return None
+
+    # Informações básicas do território
+    territorio = {
+        "id": linhas[0][0],
+        "nome": linhas[0][1],
+        "url": linhas[0][2],
+        "status": linhas[0][3],
+        "observacoes": linhas[0][4],
+        "ruas": [],
+    }
+
+    ruas_dict = {}
+    for (_, _, _, _, _, rua_id, rua_nome, numero_id, numero, data) in linhas:
+        if rua_id is None:
+            continue
+        if rua_id not in ruas_dict:
+            rua = {"id": rua_id, "nome": rua_nome, "numeros": []}
+            ruas_dict[rua_id] = rua
+            territorio["ruas"].append(rua)
+        if numero_id is not None:
+            ruas_dict[rua_id]["numeros"].append(
+                {"id": numero_id, "numero": numero, "data": data}
+            )
+
+    return territorio
