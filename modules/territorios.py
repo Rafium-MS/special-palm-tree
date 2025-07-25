@@ -121,3 +121,35 @@ def obter_territorio_completo(territorio_id):
             )
 
     return territorio
+
+
+
+# 🔢 Agrupar números por proximidade
+def agrupar_por_proximidade(rua_id, passo=10):
+    """Retorna listas de números agrupados por intervalos.
+
+    Cada grupo é representado como uma tupla ("<inicio>-<fim>", [numeros]).
+    """
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT numero FROM numeros WHERE rua_id = ? ORDER BY CAST(numero AS INTEGER)",
+        (rua_id,),
+    )
+    rows = cur.fetchall()
+    conn.close()
+
+    numeros = [int(r[0]) for r in rows if str(r[0]).isdigit()]
+    if not numeros:
+        return []
+
+    inicio = ((min(numeros) - 1) // passo) * passo + 1
+    fim = ((max(numeros) - 1) // passo + 1) * passo
+
+    grupos = []
+    for i in range(inicio, fim + 1, passo):
+        limite = i + passo - 1
+        nums = [n for n in numeros if i <= n <= limite]
+        if nums:
+            grupos.append((f"{i}-{limite}", nums))
+    return grupos

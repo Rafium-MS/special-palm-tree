@@ -1,12 +1,12 @@
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
-    QTableWidget, QTableWidgetItem, QInputDialog, QMessageBox
+    QTableWidget, QTableWidgetItem, QInputDialog, QMessageBox, QDialog
 )
 from modules.territorios import (
     listar_territorios, adicionar_territorio, atualizar_territorio,
     remover_territorio, buscar_por_nome, territorio_existe
 )
-from scraping.territorios_scraper import buscar_territorios
+from scraping.territorios_scraper import buscar_territorios, buscar_detalhes_territorio
 from gui.toast_notification import ToastNotification
 from utils.logger import log
 
@@ -33,6 +33,7 @@ class TerritoriosView(QWidget):
         # 📋 Tabela
         self.tabela = QTableWidget()
         self.layout.addWidget(self.tabela)
+        self.tabela.itemDoubleClicked.connect(lambda: self.mostrar_enderecos())
 
         # ➕➖ Botões
         botoes_layout = QHBoxLayout()
@@ -40,16 +41,19 @@ class TerritoriosView(QWidget):
         self.btn_atualizar = QPushButton("Atualizar")
         self.btn_remover = QPushButton("Remover")
         self.btn_importar = QPushButton("Importar da Web")
+        self.btn_enderecos = QPushButton("Endereços")
 
         self.btn_adicionar.clicked.connect(self.adicionar)
         self.btn_atualizar.clicked.connect(self.atualizar)
         self.btn_remover.clicked.connect(self.remover)
         self.btn_importar.clicked.connect(self.importar)
+        self.btn_enderecos.clicked.connect(self.mostrar_enderecos)
 
         botoes_layout.addWidget(self.btn_adicionar)
         botoes_layout.addWidget(self.btn_atualizar)
         botoes_layout.addWidget(self.btn_remover)
         botoes_layout.addWidget(self.btn_importar)
+        botoes_layout.addWidget(self.btn_enderecos)
         self.layout.addLayout(botoes_layout)
         self.carregar_todos()
 
@@ -156,3 +160,44 @@ class TerritoriosView(QWidget):
         self.show_toast(f"{novos} novos territórios adicionados.", "sucesso" if novos else "info")
         self.atualizar_status(f"Importação concluída ({novos} novos).", "info")
 
+
+    def mostrar_enderecos(self):
+        linha = self.get_linha_selecionada()
+        if linha is None:
+            return
+        nome = self.tabela.item(linha, 1).text()
+        url = self.tabela.item(linha, 2).text()
+        if not url:
+            self.show_toast("Território sem URL para consulta.", "aviso")
+            return
+
+        try:
+            dados = buscar_detalhes_territorio(url)
+        except Exception as e:
+            log(f"Erro ao buscar endereços: {e}", "erro")
+            self.show_toast("Falha ao obter endereços.", "erro")
+            return
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"Endereços - {nome}")
+        layout = QVBoxLayout(dialog)
+        tabela = QTableWidget()
+        layout.addWidget(tabela)
+
+        colunas = ["Rua", "Número", "Data"]
+        tabela.setColumnCount(len(colunas))
+        tabela.setHorizontalHeaderLabels(colunas)
+        tabela.setRowCount(len(dados))
+
+        for i, item in enumerate(dados):
+            tabela.setItem(i, 0, QTableWidgetItem(item.get("rua", "")))
+            tabela.setItem(i, 1, QTableWidgetItem(item.get("numero", "")))
+            tabela.setItem(i, 2, QTableWidgetItem(item.get("data", "")))
+
+        btn_fechar = QPushButton("Fechar")
+        btn_fechar.clicked.connect(dialog.accept)
+        layout.addWidget(btn_fechar)
+
+        dialog.exec_()
+        # Recarrega tabela principal caso alguma edição tenha ocorrido
+        self.carregar_todos()
