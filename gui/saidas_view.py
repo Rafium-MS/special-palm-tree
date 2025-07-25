@@ -5,6 +5,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import QDate
 from modules.saidas import listar_saidas, criar_saida, atualizar_saida, remover_saida
 from datetime import datetime
+from gui.notificacoes import sucesso, erro, aviso
 
 
 class SaidasView(QWidget):

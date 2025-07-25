@@ -6,6 +6,8 @@ from gui.saidas_view import SaidasView
 from gui.designacoes_view import DesignacoesView
 from gui.relatorio_view import RelatorioView
 from gui.toast_notification import ToastNotification
+from gui.logs_view import LogsView
+from gui.logs_view import LogsView
 
 
 class MainWindow(QWidget):
@@ -30,22 +32,32 @@ class MainWindow(QWidget):
 
         menu_lateral.addStretch()
         layout_principal.addLayout(menu_lateral, 1)
+        # Separador
+        menu_lateral.addWidget(QLabel("Ferramentas:"))
+        self.btn_logs = QPushButton("Ver Logs")
+        menu_lateral.addWidget(self.btn_logs)
 
+        # Ação
+        self.btn_logs.clicked.connect(lambda: (
+            self.stack.setCurrentIndex(4),
+            self.atualizar_status("Visualizando os logs do sistema", "info")
+        ))
         # 🧱 Conteúdo dinâmico
         self.stack = QStackedWidget()
         self.view_territorios = TerritoriosView()
         self.view_saidas = SaidasView()
         self.view_designacoes = DesignacoesView()
         self.view_relatorios = RelatorioView()
+        self.view_logs = LogsView()
 
         self.stack.addWidget(self.view_territorios)   # index 0
         self.stack.addWidget(self.view_saidas)        # index 1
         self.stack.addWidget(self.view_designacoes)   # index 2
         self.stack.addWidget(self.view_relatorios)    # index 3
+        self.stack.addWidget(self.view_logs)  # index 4
 
         layout_principal.addWidget(self.stack, 4)
 
-        # Após self.stack.addWidget(...)
         self.status_bar = QLabel("Pronto.")
         self.status_bar.setStyleSheet("padding: 6px; border-top: 1px solid #ccc; color: #333;")
         self.status_bar.setFixedHeight(30)

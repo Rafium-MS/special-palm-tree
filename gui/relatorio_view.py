@@ -4,7 +4,14 @@ from PyQt5.QtWidgets import (
 )
 from modules.relatorios import gerar_relatorio_mensal, exportar_relatorio_pdf, exportar_relatorio_excel
 from datetime import datetime
+from gui.notificacoes import sucesso, erro, aviso
 
+""" 
+- adicionar toast_notification
+- adicionar logger
+- adicionar Barra de Status
+- adicionar notificações
+"""
 
 class RelatorioView(QWidget):
     def __init__(self):

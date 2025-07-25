@@ -7,8 +7,14 @@ from modules.territorios import (
     remover_territorio, buscar_por_nome, territorio_existe
 )
 from scraping.territorios_scraper import buscar_territorios
+from gui.notificacoes import sucesso, erro, aviso
 
-
+""" 
+- adicionar toast_notification
+- adicionar logger
+- adicionar Barra de Status
+- adicionar notificações
+"""
 class TerritoriosView(QWidget):
     def __init__(self):
         super().__init__()

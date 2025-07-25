@@ -8,11 +8,13 @@ from modules.designacoes import (
 )
 from modules.territorios import listar_territorios
 from modules.saidas import listar_saidas
+from gui.notificacoes import sucesso, erro, aviso
 
 """ 
 - adicionar toast_notification
 - adicionar logger
-
+- adicionar Barra de Status
+- adicionar notificações
 """
 class DesignacoesView(QWidget):
     def __init__(self):
