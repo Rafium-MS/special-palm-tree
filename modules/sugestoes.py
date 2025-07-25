@@ -1,6 +1,14 @@
 from database.db_manager import get_connection
 from datetime import datetime, timedelta
 
+""" 
+- adicionar toast_notification
+- adicionar logger
+- adicionar Barra de Status
+- adicionar notificações
+"""
+
+
 # 🔹 Adicionar sugestão manual
 def adicionar_sugestao(territorio_id, motivo=None, nota=0):
     conn = get_connection()

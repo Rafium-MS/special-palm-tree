@@ -5,9 +5,17 @@ from gui.territorios_view import TerritoriosView
 from gui.saidas_view import SaidasView
 from gui.designacoes_view import DesignacoesView
 from gui.relatorio_view import RelatorioView
+from gui.sugestoes_view import SugestoesView
 from gui.toast_notification import ToastNotification
 from gui.logs_view import LogsView
 from gui.logs_view import LogsView
+
+""" 
+- adicionar toast_notification
+- adicionar logger
+- adicionar Barra de Status
+- adicionar notificações
+"""
 
 
 class MainWindow(QWidget):
@@ -25,8 +33,9 @@ class MainWindow(QWidget):
         self.btn_saidas = QPushButton("Saídas de Campo")
         self.btn_designacoes = QPushButton("Designações")
         self.btn_relatorios = QPushButton("Relatórios")
+        self.btn_sugestoes = QPushButton("Sugestões")
 
-        for btn in [self.btn_territorios, self.btn_saidas, self.btn_designacoes, self.btn_relatorios]:
+        for btn in [self.btn_territorios, self.btn_saidas, self.btn_designacoes, self.btn_relatorios, self.btn_sugestoes]:
             btn.setMinimumHeight(40)
             menu_lateral.addWidget(btn)
 
@@ -39,7 +48,7 @@ class MainWindow(QWidget):
 
         # Ação
         self.btn_logs.clicked.connect(lambda: (
-            self.stack.setCurrentIndex(4),
+            self.stack.setCurrentIndex(5),
             self.atualizar_status("Visualizando os logs do sistema", "info")
         ))
         # 🧱 Conteúdo dinâmico
@@ -48,13 +57,15 @@ class MainWindow(QWidget):
         self.view_saidas = SaidasView()
         self.view_designacoes = DesignacoesView()
         self.view_relatorios = RelatorioView()
+        self.view_sugestoes = SugestoesView()
         self.view_logs = LogsView()
 
         self.stack.addWidget(self.view_territorios)   # index 0
         self.stack.addWidget(self.view_saidas)        # index 1
         self.stack.addWidget(self.view_designacoes)   # index 2
         self.stack.addWidget(self.view_relatorios)    # index 3
-        self.stack.addWidget(self.view_logs)  # index 4
+        self.stack.addWidget(self.view_sugestoes)     # index 4
+        self.stack.addWidget(self.view_logs)          # index 5
 
         layout_principal.addWidget(self.stack, 4)
 
@@ -73,6 +84,7 @@ class MainWindow(QWidget):
         self.btn_saidas.clicked.connect(lambda: self.stack.setCurrentIndex(1))
         self.btn_designacoes.clicked.connect(lambda: self.stack.setCurrentIndex(2))
         self.btn_relatorios.clicked.connect(lambda: self.stack.setCurrentIndex(3))
+        self.btn_sugestoes.clicked.connect(lambda: self.stack.setCurrentIndex(4))
 
     def atualizar_status(self, mensagem, tipo="info"):
         cores = {

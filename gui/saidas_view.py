@@ -7,6 +7,12 @@ from modules.saidas import listar_saidas, criar_saida, atualizar_saida, remover_
 from datetime import datetime
 from gui.notificacoes import sucesso, erro, aviso
 
+""" 
+- adicionar toast_notification
+- adicionar logger
+- adicionar Barra de Status
+- adicionar notificações
+"""
 
 class SaidasView(QWidget):
     def __init__(self):

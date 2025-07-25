@@ -15,6 +15,7 @@ from gui.notificacoes import sucesso, erro, aviso
 - adicionar Barra de Status
 - adicionar notificações
 """
+
 class TerritoriosView(QWidget):
     def __init__(self):
         super().__init__()

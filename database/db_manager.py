@@ -20,6 +20,26 @@ def init_db():
         observacoes TEXT
     );
     """)
+    # 🌐 Ruas pertencentes a um território
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS ruas (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        territorio_id INTEGER NOT NULL,
+        nome TEXT NOT NULL,
+        FOREIGN KEY (territorio_id) REFERENCES territorios(id)
+    );
+    """)
+
+    # 🔢 Números das ruas, cada um com data da última coleta
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS numeros (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        rua_id INTEGER NOT NULL,
+        numero TEXT NOT NULL,
+        data TEXT,
+        FOREIGN KEY (rua_id) REFERENCES ruas(id)
+    );
+    """)
 
     cur.execute("""
     CREATE TABLE IF NOT EXISTS saidas_campo (
