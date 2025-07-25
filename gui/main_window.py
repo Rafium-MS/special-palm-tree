@@ -8,6 +8,7 @@ from gui.relatorio_view import RelatorioView
 from gui.sugestoes_view import SugestoesView
 from gui.toast_notification import ToastNotification
 from gui.logs_view import LogsView
+from scraping.territorios_scraper import executar_scraper_com_interface
 
 """ 
 - adicionar toast_notification
@@ -15,7 +16,6 @@ from gui.logs_view import LogsView
 - adicionar Barra de Status
 - adicionar notificações
 """
-
 
 class MainWindow(QWidget):
     def __init__(self):
@@ -40,6 +40,13 @@ class MainWindow(QWidget):
 
         menu_lateral.addStretch()
         layout_principal.addLayout(menu_lateral, 1)
+        self.btn_atualizar_territorios = QPushButton("Atualizar Territórios")
+        menu_lateral.addWidget(self.btn_atualizar_territorios)
+
+        self.btn_atualizar_territorios.clicked.connect(
+            lambda: executar_scraper_com_interface(self)
+        )
+
         # Separador
         menu_lateral.addWidget(QLabel("Ferramentas:"))
         self.btn_logs = QPushButton("Ver Logs")

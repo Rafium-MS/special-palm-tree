@@ -51,21 +51,21 @@ class TerritoriosView(QWidget):
         botoes_layout.addWidget(self.btn_remover)
         botoes_layout.addWidget(self.btn_importar)
         self.layout.addLayout(botoes_layout)
-
-        self.parent_window = self.parentWidget()
-
         self.carregar_todos()
 
+
     def show_toast(self, mensagem, tipo="info"):
-        if self.parent_window and hasattr(self.parent_window, "show_toast"):
-            self.parent_window.show_toast(mensagem, tipo)
+        parent = self.window()
+        if parent and hasattr(parent, "show_toast"):
+            parent.show_toast(mensagem, tipo)
         else:
             toast = ToastNotification(mensagem, tipo, parent=self)
             toast.show()
 
     def atualizar_status(self, mensagem, tipo="info"):
-        if self.parent_window and hasattr(self.parent_window, "atualizar_status"):
-            self.parent_window.atualizar_status(mensagem, tipo)
+        parent = self.window()
+        if parent and hasattr(parent, "atualizar_status"):
+            parent.atualizar_status(mensagem, tipo)
 
     def carregar_todos(self):
         dados = listar_territorios()
@@ -128,6 +128,7 @@ class TerritoriosView(QWidget):
         log(f"Território atualizado: ID={id_}, Nome={nome}")
         self.show_toast("Território atualizado com sucesso.", "sucesso")
         self.atualizar_status(f"Território '{nome}' atualizado.", "sucesso")
+        self.carregar_todos()
 
     def remover(self):
         linha = self.get_linha_selecionada()
@@ -154,3 +155,4 @@ class TerritoriosView(QWidget):
         self.carregar_todos()
         self.show_toast(f"{novos} novos territórios adicionados.", "sucesso" if novos else "info")
         self.atualizar_status(f"Importação concluída ({novos} novos).", "info")
+
