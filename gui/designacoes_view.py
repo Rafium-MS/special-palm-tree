@@ -19,7 +19,8 @@ class DesignacoesView(QWidget):
         self.setMinimumWidth(900)
         self.layout = QVBoxLayout()
         self.setLayout(self.layout)
-        self.parent = parent  # Para acessar o MainWindow e usar status/toast
+        # Guarda a janela pai para enviar notificações e atualizar o status
+        self.parent_window = parent
 
         # 🔽 Seletores
         form_layout = QHBoxLayout()
@@ -77,9 +78,9 @@ class DesignacoesView(QWidget):
         self.carregar_tabela()
 
     def show_toast(self, mensagem, tipo="info"):
-        if self.parent:
-            self.parent.show_toast(mensagem, tipo)
-            self.parent.atualizar_status(mensagem, tipo)
+        if self.parent_window:
+            self.parent_window.show_toast(mensagem, tipo)
+            self.parent_window.atualizar_status(mensagem, tipo)
 
     def carregar_seletores(self):
         self.combo_territorio.clear()
@@ -157,7 +158,7 @@ class DesignacoesView(QWidget):
             self.show_toast("Designação removida com sucesso.", "sucesso")
             self.carregar_tabela()
 
-    def gerar_designacao(territorio_id):
+    def gerar_designacao(self, territorio_id):
         conn = get_connection()
         cur = conn.cursor()
 
@@ -180,7 +181,7 @@ class DesignacoesView(QWidget):
             numeros = cur.fetchall()
 
             for numero, tipo, status in numeros:
-                if not numero_recente(rua_id, numero, meses=3):
+                if not self.numero_recente(rua_id, numero, meses=3):
                     # Número elegível para designação
                     designacao.append({
                         "rua": nome_rua,
@@ -192,7 +193,7 @@ class DesignacoesView(QWidget):
 
         conn.close()
         return designacao
-    def numero_recente(rua_id, numero, meses=3):
+    def numero_recente(self, rua_id, numero, meses=3):
         conn = get_connection()
         cur = conn.cursor()
 
@@ -213,7 +214,6 @@ class DesignacoesView(QWidget):
         return resultado > 0
 
     def gerar_designacao_otimizada(self):
-        from PyQt5.QtWidgets import QTableWidgetItem
         conn = get_connection()
         cur = conn.cursor()
 
@@ -235,7 +235,7 @@ class DesignacoesView(QWidget):
                 numeros = cur.fetchall()
 
                 for numero, tipo, status in numeros:
-                    if not numero_recente(rua_id, numero, meses=3):
+                    if not self.numero_recente(rua_id, numero, meses=3):
                         designacoes.append([nome_territorio, nome_rua, numero, tipo, status])
                         break  # apenas um número por rua
         conn.close()
@@ -248,4 +248,7 @@ class DesignacoesView(QWidget):
             for j, valor in enumerate(linha):
                 self.tabela.setItem(i, j, QTableWidgetItem(str(valor)))
 
-        self.parent().atualizar_status("Designação otimizada gerada com sucesso.", "sucesso")
+        if self.parent_window:
+            self.parent_window.atualizar_status(
+                "Designação otimizada gerada com sucesso.", "sucesso"
+            )

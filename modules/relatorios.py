@@ -5,10 +5,8 @@ from reportlab.platypus import (
     SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image, PageBreak
 )
 from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.pdfgen import canvas
 from reportlab.lib.units import cm
 from datetime import datetime
-from database.db_manager import get_connection
 import pandas as pd
 from database.db_manager import get_connection
 
