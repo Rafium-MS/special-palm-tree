@@ -2,6 +2,13 @@ import os
 import tempfile
 import unittest
 import database.db_manager as db
+from database.db_manager import init_db as _init_db, get_connection as _get_connection
+
+def init_db():
+    _init_db(db.DB_NAME)
+
+def get_connection():
+    return _get_connection(db.DB_NAME)
 from modules.territorios import (
     adicionar_territorio,
     obter_territorio_completo,

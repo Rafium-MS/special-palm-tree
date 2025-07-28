@@ -1,4 +1,8 @@
 import sqlite3
+import os
+
+# Base directory of the repository (two levels above this file)
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 DB_NAME = "designacao_territorios.db"
 
@@ -7,15 +11,29 @@ def get_connection(path: str | None = None):
     """Return a connection to the SQLite database located at *path*.
 
     If *path* is not provided, the module-level ``DB_NAME`` is used. This
-    allows tests to override ``DB_NAME`` dynamically.
-    """
+    allows tests to override ``DB_NAME`` dynamically. When ``path`` is a
+    relative path, it is resolved relative to ``BASE_DIR``.    """
     if path is None:
         path = DB_NAME
+        # Resolve relative paths to the repository base directory
+        if not os.path.isabs(path):
+            path = os.path.join(BASE_DIR, path)
+
     return sqlite3.connect(path)
 
 
 def init_db(path: str = DB_NAME):
-    conn = get_connection(path)
+    """Initialize the database schema.
+
+    ``path`` may be relative or absolute. Relative paths are resolved
+    relative to ``BASE_DIR`` before creating the connection.
+    """
+    # Resolve relative path before opening the connection
+    db_path = path
+    if not os.path.isabs(db_path):
+        db_path = os.path.join(BASE_DIR, db_path)
+
+    conn = get_connection(db_path)
     cur = conn.cursor()
 
     cur.execute("""

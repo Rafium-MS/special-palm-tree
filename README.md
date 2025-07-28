@@ -34,6 +34,9 @@ Este repositório contém uma aplicação em Python para administração de terr
   ```bash
   python main.py
   ```
+    Os arquivos SVG exibidos pela interface são procurados na pasta `mapas` do
+  diretório raiz do projeto.
+- 
 - **Rodar o scraper manualmente**:
   ```bash
   python -m scraping.territorios_scraper

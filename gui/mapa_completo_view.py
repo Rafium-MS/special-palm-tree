@@ -1,6 +1,8 @@
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QPushButton, QHBoxLayout, QFileDialog
 from PyQt5.QtSvg import QSvgWidget
 import os
+from pathlib import Path
+from utils import get_project_root
 
 class MapaCompletoView(QWidget):
     def __init__(self, caminho_mapa="mapas/Mapa_Completo.svg"):
@@ -13,10 +15,15 @@ class MapaCompletoView(QWidget):
         self.svg_widget.setMinimumSize(960, 720)
 
         # 🗺️ Carrega o arquivo
-        if os.path.exists(caminho_mapa):
-            self.svg_widget.load(caminho_mapa)
+        base = get_project_root()
+        caminho = Path(caminho_mapa)
+        if not caminho.is_absolute():
+            caminho = base / caminho
+
+        if caminho.exists():
+            self.svg_widget.load(str(caminho))
         else:
-            aviso = QLabel(f"Arquivo '{caminho_mapa}' não encontrado.")
+            aviso = QLabel(f"Arquivo '{caminho}' não encontrado.")
             aviso.setStyleSheet("color: red; font-weight: bold;")
             layout.addWidget(aviso)
 

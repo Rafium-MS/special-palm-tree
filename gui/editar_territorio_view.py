@@ -1,6 +1,7 @@
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QLabel, QLineEdit, QTextEdit,
-    QPushButton, QTableWidget, QTableWidgetItem, QComboBox, QMessageBox
+    QPushButton, QTableWidget, QTableWidgetItem, QComboBox, QMessageBox,
+    QInputDialog
 )
 from PyQt5.QtSvg import QSvgWidget
 import os
@@ -102,7 +103,7 @@ class EditarTerritorioView(QDialog):
             self.tabela_ruas.setItem(i, 1, QTableWidgetItem(rua["nome"]))
 
     def adicionar_rua(self):
-        nome, ok = QLineEdit.getText(self, "Nova Rua", "Nome:")
+        nome, ok = QInputDialog.getText(self, "Nova Rua", "Nome:")
         if ok and nome.strip():
             conn = get_connection()
             cur = conn.cursor()
@@ -118,7 +119,7 @@ class EditarTerritorioView(QDialog):
             return
         id_rua = int(self.tabela_ruas.item(linha, 0).text())
         nome_atual = self.tabela_ruas.item(linha, 1).text()
-        nome, ok = QLineEdit.getText(self, "Editar Rua", "Novo nome:", text=nome_atual)
+        nome, ok = QInputDialog.getText(self, "Editar Rua", "Novo nome:", text=nome_atual)
         if ok and nome.strip():
             conn = get_connection()
             cur = conn.cursor()

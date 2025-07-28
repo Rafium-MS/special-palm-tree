@@ -39,7 +39,7 @@ class TerritoriosView(QWidget):
         btn_salvar.clicked.connect(self.salvar_dados_gerais)
         botoes.addStretch()
         botoes.addWidget(btn_salvar)
-        widget.addLayout(botoes)
+        self.layout.addLayout(botoes)  # Changed from widget.addLayout to self.layout.addLayout
 
         # 📋 Tabela
         self.tabela = QTableWidget()
@@ -183,7 +183,7 @@ class TerritoriosView(QWidget):
             self.atualizar_status(f"Território '{nome}' removido.", "aviso")
 
     def importar(self):
-        territorios = buscar_territorios()
+        territorios = buscar_territorios_json()
         novos = 0
         for t in territorios:
             if not territorio_existe(t["nome"]):
@@ -286,10 +286,15 @@ class TerritoriosView(QWidget):
         self.carregar_todos()
 
     def salvar_dados_gerais(self):
-        nome = self.nome_input.text().strip()
-        url = self.url_input.text().strip()
-        status = self.status_input.currentText()
-        obs = self.obs_input.toPlainText().strip()
+        linha = self.get_linha_selecionada()
+        if linha is None:
+            return
+
+        territorio_id = int(self.tabela.item(linha, 0).text())
+        nome = self.tabela.item(linha, 1).text()
+        url = self.tabela.item(linha, 2).text()
+        status = self.tabela.item(linha, 3).text()
+        obs = self.tabela.item(linha, 4).text()
 
         conn = get_connection()
         cur = conn.cursor()
@@ -297,9 +302,9 @@ class TerritoriosView(QWidget):
             UPDATE territorios
             SET nome = ?, url = ?, status = ?, observacoes = ?
             WHERE id = ?
-        """, (nome, url, status, obs, self.territorio_id))
+        """, (nome, url, status, obs, territorio_id))
         conn.commit()
         conn.close()
 
         QMessageBox.information(self, "Salvo", "Dados do território atualizados com sucesso.")
-        self.accept()
+        self.carregar_todos()

@@ -11,6 +11,7 @@ def main():
     janela = MainWindow()
     janela.show()
     sys.exit(app.exec_())
+
 def agendar_scraping_diario():
     schedule.every().day.at("17:00").do(executar_scraper)
     while True:
