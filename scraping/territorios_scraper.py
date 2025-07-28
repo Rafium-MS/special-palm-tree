@@ -7,6 +7,7 @@ import json
 import time
 from threading import Thread
 import schedule
+import sqlite3
 
 # 📁 Ler JSON com lista de territórios
 def buscar_territorios_json(caminho="territorios_lista.json"):
@@ -14,8 +15,13 @@ def buscar_territorios_json(caminho="territorios_lista.json"):
         return json.load(f)
 
 # 📥 Buscar as ruas de um território
-def buscar_ruas(territorio_url):
-    response = requests.get(territorio_url)
+def buscar_ruas(territorio_url, timeout=10):
+    try:
+        response = requests.get(territorio_url, timeout=timeout)
+        response.raise_for_status()
+    except Exception as e:
+        log(f"Erro ao acessar {territorio_url}: {str(e)}", tipo="erro")
+        return []
     soup = BeautifulSoup(response.text, "html.parser")
     ruas = []
 
@@ -26,8 +32,13 @@ def buscar_ruas(territorio_url):
     return ruas
 
 # 📥 Buscar os números da rua
-def buscar_numeros(url_rua):
-    response = requests.get(url_rua)
+def buscar_numeros(url_rua, timeout=10):
+    try:
+        response = requests.get(url_rua, timeout=timeout)
+        response.raise_for_status()
+    except Exception as e:
+        log(f"Erro ao acessar {url_rua}: {str(e)}", tipo="erro")
+        return []
     soup = BeautifulSoup(response.text, "html.parser")
     resultados = []
 
@@ -65,10 +76,18 @@ def salvar_no_banco(territorios):
         if row:
             territorio_id = row[0]
         else:
-            cur.execute("INSERT INTO territorios (nome, url) VALUES (?, ?)", (t['nome'], t['url']))
-            territorio_id = cur.lastrowid
-            novos += 1
-            log(f"Novo território inserido: {t['nome']}")
+            try:
+                cur.execute(
+                    "INSERT INTO territorios (nome, url) VALUES (?, ?)",
+                    (t["nome"], t["url"]),
+                )
+                territorio_id = cur.lastrowid
+                novos += 1
+                log(f"Novo território inserido: {t['nome']}")
+            except sqlite3.IntegrityError:
+                cur.execute("SELECT id FROM territorios WHERE nome = ?", (t['nome'],))
+                territorio_id = cur.fetchone()[0]
+                log(f"Território já existe: {t['nome']}")
 
         if t['url']:
             try:

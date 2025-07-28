@@ -22,7 +22,9 @@ def validate_territorio(nome=None, status=None, observacoes=None):
         raise ValueError("Observações excedem limite de caracteres")
 
 # 🔹 Criar novo território
-def adicionar_territorio(nome, url=None, status="novo", observacoes=None):
+def adicionar_territorio(
+    nome, url=None, status="novo", observacoes=None, ultima_atualizacao=None
+):
     validate_territorio(nome, status, observacoes)
 
     conn = get_connection()
@@ -30,7 +32,8 @@ def adicionar_territorio(nome, url=None, status="novo", observacoes=None):
     cur.execute("""
         INSERT INTO territorios (nome, url, status, observacoes)
         VALUES (?, ?, ?, ?)
-    """, (nome, url, status, observacoes))
+    """, (nome, url, status, observacoes)
+    )
     conn.commit()
     conn.close()
 
@@ -39,7 +42,7 @@ def listar_territorios():
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("""
-        SELECT id, nome, url, status, observacoes
+        SELECT id, nome, url, status, observacoes, ultima_atualizacao
         FROM territorios
         ORDER BY nome
     """)
@@ -80,6 +83,7 @@ def remover_territorio(territorio_id):
     cur.execute("DELETE FROM territorios WHERE id = ?", (territorio_id,))
     conn.commit()
     conn.close()
+
 # 🔹 Remover território com todas as ruas e números
 def remover_completo(territorio_id):
     """Remove o território e todos os registros vinculados a ele."""
@@ -96,12 +100,13 @@ def remover_completo(territorio_id):
     cur.execute("DELETE FROM territorios WHERE id = ?", (territorio_id,))
     conn.commit()
     conn.close()
+
 # 🔹 Buscar território por nome
 def buscar_por_nome(parte_nome):
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("""
-        SELECT id, nome, url, status, observacoes
+        SELECT id, nome, url, status, observacoes, ultima_atualizacao
         FROM territorios
         WHERE nome LIKE ?
         ORDER BY nome
@@ -125,7 +130,7 @@ def obter_territorio_completo(territorio_id):
     cur = conn.cursor()
     cur.execute(
         """
-        SELECT t.id, t.nome, t.url, t.status, t.observacoes,
+        SELECT t.id, t.nome, t.url, t.status, t.observacoes, t.ultima_atualizacao,
                r.id as rua_id, r.nome as rua_nome,
                n.id as numero_id, n.numero, n.data
         FROM territorios t
@@ -149,11 +154,12 @@ def obter_territorio_completo(territorio_id):
         "url": linhas[0][2],
         "status": linhas[0][3],
         "observacoes": linhas[0][4],
+        "ultima_atualizacao": linhas[0][5],
         "ruas": [],
     }
 
     ruas_dict = {}
-    for (_, _, _, _, _, rua_id, rua_nome, numero_id, numero, data) in linhas:
+    for (_, _, _, _, _, _, rua_id, rua_nome, numero_id, numero, data) in linhas:
         if rua_id is None:
             continue
         if rua_id not in ruas_dict:

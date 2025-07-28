@@ -7,8 +7,10 @@ from modules.territorios import (
     listar_territorios, adicionar_territorio, atualizar_territorio,
     remover_territorio, remover_completo, buscar_por_nome, territorio_existe
 )
-from scraping.territorios_scraper import buscar_territorios, buscar_ruas, buscar_numeros
+from scraping.territorios_scraper import buscar_territorios_json, buscar_ruas, buscar_numeros
 from gui.toast_notification import ToastNotification
+from gui.territorio_dialog import TerritorioDialog
+
 from utils.logger import log
 
 class TerritoriosView(QWidget):
@@ -31,6 +33,14 @@ class TerritoriosView(QWidget):
         busca_layout.addWidget(self.btn_buscar)
         self.layout.addLayout(busca_layout)
 
+        # 🔘 Botão Salvar
+        botoes = QHBoxLayout()
+        btn_salvar = QPushButton("Salvar e Fechar")
+        btn_salvar.clicked.connect(self.salvar_dados_gerais)
+        botoes.addStretch()
+        botoes.addWidget(btn_salvar)
+        widget.addLayout(botoes)
+
         # 📋 Tabela
         self.tabela = QTableWidget()
         self.layout.addWidget(self.tabela)
@@ -44,6 +54,7 @@ class TerritoriosView(QWidget):
         self.btn_importar = QPushButton("Importar da Web")
         self.btn_enderecos = QPushButton("Endereços")
         self.btn_arvore = QPushButton("Árvore")
+        btn_detalhado = QPushButton("Editar Detalhado")
 
         self.btn_adicionar.clicked.connect(self.adicionar)
         self.btn_atualizar.clicked.connect(self.atualizar)
@@ -51,6 +62,7 @@ class TerritoriosView(QWidget):
         self.btn_importar.clicked.connect(self.importar)
         self.btn_enderecos.clicked.connect(self.mostrar_enderecos)
         self.btn_arvore.clicked.connect(self.mostrar_enderecos_como_arvore)
+        btn_detalhado.clicked.connect(self.abrir_edicao_detalhada)
 
         botoes_layout.addWidget(self.btn_adicionar)
         botoes_layout.addWidget(self.btn_atualizar)
@@ -58,6 +70,9 @@ class TerritoriosView(QWidget):
         botoes_layout.addWidget(self.btn_importar)
         botoes_layout.addWidget(self.btn_enderecos)
         botoes_layout.addWidget(self.btn_arvore)
+        botoes_layout.addWidget(btn_detalhado)
+
+
         self.layout.addLayout(botoes_layout)
         self.carregar_todos()
 
@@ -110,32 +125,40 @@ class TerritoriosView(QWidget):
         return linha
 
     def adicionar(self):
-        nome, ok = QInputDialog.getText(self, "Novo Território", "Nome:")
-        if ok and nome.strip():
-            if territorio_existe(nome.strip()):
+        dialog = TerritorioDialog(self)
+        if dialog.exec_():
+            dados = dialog.get_dados()
+            if territorio_existe(dados["nome"]):
                 self.show_toast("Território já existe.", "erro")
-                log(f"Tentativa de adicionar território duplicado: {nome}", "erro")
                 return
-            adicionar_territorio(nome.strip())
-            log(f"Território adicionado: {nome}")
+            adicionar_territorio(**dados)
+            log(f"Território adicionado: {dados['nome']}")
             self.carregar_todos()
             self.show_toast("Território adicionado com sucesso.", "sucesso")
-            self.atualizar_status(f"Território '{nome}' adicionado.", "sucesso")
+            self.atualizar_status(f"Território '{dados['nome']}' adicionado.")
 
     def atualizar(self):
         linha = self.get_linha_selecionada()
         if linha is None:
             return
+
         id_ = int(self.tabela.item(linha, 0).text())
-        nome = self.tabela.item(linha, 1).text()
-        url = self.tabela.item(linha, 2).text()
-        status = self.tabela.item(linha, 3).text()
-        obs = self.tabela.item(linha, 4).text()
-        atualizar_territorio(id_, nome=nome, url=url, status=status, observacoes=obs)
-        log(f"Território atualizado: ID={id_}, Nome={nome}")
-        self.show_toast("Território atualizado com sucesso.", "sucesso")
-        self.atualizar_status(f"Território '{nome}' atualizado.", "sucesso")
-        self.carregar_todos()
+        dados = {
+            "nome": self.tabela.item(linha, 1).text(),
+            "url": self.tabela.item(linha, 2).text(),
+            "status": self.tabela.item(linha, 3).text(),
+            "observacoes": self.tabela.item(linha, 4).text()
+        }
+
+        from gui.territorio_dialog import TerritorioDialog
+        dialog = TerritorioDialog(self, dados=dados)
+        if dialog.exec_():
+            novos_dados = dialog.get_dados()
+            atualizar_territorio(id_, **novos_dados)
+            log(f"Território atualizado: ID={id_}, Nome={novos_dados['nome']}")
+            self.carregar_todos()
+            self.show_toast("Território atualizado com sucesso.", "sucesso")
+            self.atualizar_status(f"Território '{novos_dados['nome']}' atualizado.", "sucesso")
 
     def remover(self):
         linha = self.get_linha_selecionada()
@@ -251,3 +274,32 @@ class TerritoriosView(QWidget):
         layout.addWidget(btn_fechar)
 
         dialog.exec_()
+
+    def abrir_edicao_detalhada(self):
+        linha = self.get_linha_selecionada()
+        if linha is None:
+            return
+        territorio_id = int(self.tabela.item(linha, 0).text())
+        from gui.editar_territorio_view import EditarTerritorioView
+        dialog = EditarTerritorioView(territorio_id, self)
+        dialog.exec_()
+        self.carregar_todos()
+
+    def salvar_dados_gerais(self):
+        nome = self.nome_input.text().strip()
+        url = self.url_input.text().strip()
+        status = self.status_input.currentText()
+        obs = self.obs_input.toPlainText().strip()
+
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE territorios
+            SET nome = ?, url = ?, status = ?, observacoes = ?
+            WHERE id = ?
+        """, (nome, url, status, obs, self.territorio_id))
+        conn.commit()
+        conn.close()
+
+        QMessageBox.information(self, "Salvo", "Dados do território atualizados com sucesso.")
+        self.accept()

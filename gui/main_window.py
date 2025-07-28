@@ -9,6 +9,8 @@ from gui.sugestoes_view import SugestoesView
 from gui.toast_notification import ToastNotification
 from gui.logs_view import LogsView
 from scraping.territorios_scraper import executar_scraper_com_interface
+from gui.mapa_completo_view import MapaCompletoView
+from gui.mapa_completo_view import MapaCompletoView
 
 """ 
 - adicionar toast_notification
@@ -33,6 +35,9 @@ class MainWindow(QWidget):
         self.btn_designacoes = QPushButton("Designações")
         self.btn_relatorios = QPushButton("Relatórios")
         self.btn_sugestoes = QPushButton("Sugestões")
+        self.btn_mapa = QPushButton("Mapa Geral")
+        menu_lateral.addWidget(self.btn_mapa)
+        self.btn_mapa.clicked.connect(self.abrir_mapa_geral)
 
         for btn in [self.btn_territorios, self.btn_saidas, self.btn_designacoes, self.btn_relatorios, self.btn_sugestoes]:
             btn.setMinimumHeight(40)
@@ -102,6 +107,10 @@ class MainWindow(QWidget):
         cor = cores.get(tipo, "#333")
         self.status_bar.setStyleSheet(f"padding:6px; border-top:1px solid #ccc; color:{cor};")
         self.status_bar.setText(mensagem)
+
+    def abrir_mapa_geral(self):
+        self.mapa_view = MapaCompletoView()
+        self.mapa_view.show()
 
     def show_toast(self, mensagem, tipo="info", tempo=3000):
         toast = ToastNotification(mensagem, tipo, tempo, parent=self)

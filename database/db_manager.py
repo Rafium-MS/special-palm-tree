@@ -24,9 +24,13 @@ def init_db(path: str = DB_NAME):
         nome TEXT NOT NULL,
         url TEXT,
         status TEXT DEFAULT 'novo',
-        observacoes TEXT
-    );
+        observacoes TEXT,
+        ultima_atualizacao DATETIME    
+        );
     """)
+    cur.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_territorios_nome ON territorios(nome);"
+    )
     # 🌐 Ruas pertencentes a um território
     cur.execute("""
     CREATE TABLE IF NOT EXISTS ruas (
