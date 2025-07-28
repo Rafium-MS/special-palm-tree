@@ -10,6 +10,7 @@ from reportlab.lib.units import cm
 from datetime import datetime
 from database.db_manager import get_connection
 import pandas as pd
+from database.db_manager import get_connection
 
 # 🔹 Gerar relatório de designações por mês e ano
 def gerar_relatorio_mensal(mes, ano):
@@ -87,6 +88,7 @@ def cabecalho_rodape(canvas_obj, doc, mes, ano, logo_path="assets/logo.png"):
     canvas_obj.drawString(1.5 * cm, 1.5 * cm, f"Página {canvas_obj.getPageNumber()}")
 
     canvas_obj.restoreState()
+
 def exportar_relatorio_pdf(mes, ano, caminho_arquivo=None, logo_path="assets/logo.png"):
     df = gerar_relatorio_mensal(mes, ano)
     if df.empty:
@@ -128,3 +130,21 @@ def exportar_relatorio_pdf(mes, ano, caminho_arquivo=None, logo_path="assets/log
 
     print(f"Relatório PDF gerado com sucesso: {caminho_arquivo}")
     return caminho_arquivo
+
+
+def obter_historico_numeros_por_territorio(territorio_id):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT t.nome as territorio, r.nome as rua, n.numero, n.tipo, n.status, n.data, n.data_coleta
+        FROM numeros n
+        JOIN ruas r ON n.rua_id = r.id
+        JOIN territorios t ON r.territorio_id = t.id
+        WHERE t.id = ?
+        ORDER BY r.nome, n.numero, n.data_coleta DESC
+    """, (territorio_id,))
+
+    resultados = cur.fetchall()
+    conn.close()
+    return resultados

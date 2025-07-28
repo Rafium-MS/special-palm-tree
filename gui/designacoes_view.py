@@ -53,14 +53,17 @@ class DesignacoesView(QWidget):
         self.btn_adicionar = QPushButton("Adicionar")
         self.btn_atualizar = QPushButton("Atualizar Status")
         self.btn_remover = QPushButton("Remover")
+        self.btn_gerar_otimizado = QPushButton("Gerar Designação Otimizada")
 
         self.btn_adicionar.clicked.connect(self.adicionar)
         self.btn_atualizar.clicked.connect(self.atualizar)
         self.btn_remover.clicked.connect(self.remover)
+        self.btn_gerar_otimizado.clicked.connect(self.gerar_designacao_otimizada)
 
         botoes_layout.addWidget(self.btn_adicionar)
         botoes_layout.addWidget(self.btn_atualizar)
         botoes_layout.addWidget(self.btn_remover)
+        botoes_layout.addWidget(self.btn_gerar_otimizado)
         self.layout.addLayout(botoes_layout)
 
         # Tabela
@@ -153,3 +156,96 @@ class DesignacoesView(QWidget):
             log(f"Designação ID {id_} removida", "aviso")
             self.show_toast("Designação removida com sucesso.", "sucesso")
             self.carregar_tabela()
+
+    def gerar_designacao(territorio_id):
+        conn = get_connection()
+        cur = conn.cursor()
+
+        # Buscar todas as ruas do território
+        cur.execute("SELECT id, nome FROM ruas WHERE territorio_id = ?", (territorio_id,))
+        ruas = cur.fetchall()
+
+        designacao = []
+
+        for rua in ruas:
+            rua_id, nome_rua = rua
+
+            # Buscar os números mais recentes dessa rua
+            cur.execute("""
+                SELECT DISTINCT numero, tipo, status
+                FROM numeros
+                WHERE rua_id = ?
+                ORDER BY data_coleta DESC
+            """, (rua_id,))
+            numeros = cur.fetchall()
+
+            for numero, tipo, status in numeros:
+                if not numero_recente(rua_id, numero, meses=3):
+                    # Número elegível para designação
+                    designacao.append({
+                        "rua": nome_rua,
+                        "numero": numero,
+                        "tipo": tipo,
+                        "status": status
+                    })
+                    break  # pegar apenas um número por rua (ajustável)
+
+        conn.close()
+        return designacao
+    def numero_recente(rua_id, numero, meses=3):
+        conn = get_connection()
+        cur = conn.cursor()
+
+        limite = datetime.now() - timedelta(days=30*meses)
+        limite_str = limite.strftime("%Y-%m-%d")
+
+        cur.execute("""
+            SELECT COUNT(*)
+            FROM numeros
+            WHERE rua_id = ?
+            AND numero = ?
+            AND DATE(data_coleta) >= DATE(?)
+        """, (rua_id, numero, limite_str))
+
+        resultado = cur.fetchone()[0]
+        conn.close()
+
+        return resultado > 0
+
+    def gerar_designacao_otimizada(self):
+        from PyQt5.QtWidgets import QTableWidgetItem
+        conn = get_connection()
+        cur = conn.cursor()
+
+        cur.execute("SELECT id, nome FROM territorios")
+        territorios = cur.fetchall()
+        designacoes = []
+
+        for territorio_id, nome_territorio in territorios:
+            cur.execute("SELECT id, nome FROM ruas WHERE territorio_id = ?", (territorio_id,))
+            ruas = cur.fetchall()
+
+            for rua_id, nome_rua in ruas:
+                cur.execute("""
+                    SELECT DISTINCT numero, tipo, status
+                    FROM numeros
+                    WHERE rua_id = ?
+                    ORDER BY data_coleta DESC
+                """, (rua_id,))
+                numeros = cur.fetchall()
+
+                for numero, tipo, status in numeros:
+                    if not numero_recente(rua_id, numero, meses=3):
+                        designacoes.append([nome_territorio, nome_rua, numero, tipo, status])
+                        break  # apenas um número por rua
+        conn.close()
+
+        self.tabela.setRowCount(len(designacoes))
+        self.tabela.setColumnCount(5)
+        self.tabela.setHorizontalHeaderLabels(["Território", "Rua", "Número", "Tipo", "Status"])
+
+        for i, linha in enumerate(designacoes):
+            for j, valor in enumerate(linha):
+                self.tabela.setItem(i, j, QTableWidgetItem(str(valor)))
+
+        self.parent().atualizar_status("Designação otimizada gerada com sucesso.", "sucesso")

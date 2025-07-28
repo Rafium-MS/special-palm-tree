@@ -24,8 +24,9 @@ def init_db():
     cur.execute("""
     CREATE TABLE IF NOT EXISTS ruas (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        territorio_id INTEGER NOT NULL,
         nome TEXT NOT NULL,
+        url TEXT,
+        territorio_id INTEGER,
         FOREIGN KEY (territorio_id) REFERENCES territorios(id)
     );
     """)
@@ -34,9 +35,12 @@ def init_db():
     cur.execute("""
     CREATE TABLE IF NOT EXISTS numeros (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        rua_id INTEGER NOT NULL,
-        numero TEXT NOT NULL,
+        rua_id INTEGER,
+        numero TEXT,
+        tipo TEXT,
+        status TEXT,
         data TEXT,
+        data_coleta DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (rua_id) REFERENCES ruas(id)
     );
     """)

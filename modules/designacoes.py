@@ -1,4 +1,5 @@
 from database.db_manager import get_connection
+from datetime import datetime, timedelta
 
 # 🔹 Criar nova designação
 def criar_designacao(territorio_id, saida_id, data_inicio, data_fim, status="pendente"):
@@ -72,3 +73,24 @@ def buscar_por_grupo(grupo):
     resultados = cur.fetchall()
     conn.close()
     return resultados
+
+def numero_recente(rua_id, numero, meses=3):
+    """Verifica se o número foi designado nos últimos X meses."""
+    conn = get_connection()
+    cur = conn.cursor()
+
+    limite = datetime.now() - timedelta(days=30*meses)
+    limite_str = limite.strftime("%Y-%m-%d")
+
+    cur.execute("""
+        SELECT COUNT(*)
+        FROM numeros
+        WHERE rua_id = ?
+        AND numero = ?
+        AND DATE(data_coleta) >= DATE(?)
+    """, (rua_id, numero, limite_str))
+
+    resultado = cur.fetchone()[0]
+    conn.close()
+
+    return resultado > 0  # True se foi usado recentemente

@@ -6,7 +6,7 @@ from modules.territorios import (
     listar_territorios, adicionar_territorio, atualizar_territorio,
     remover_territorio, buscar_por_nome, territorio_existe
 )
-from scraping.territorios_scraper import buscar_territorios, buscar_detalhes_territorio
+from scraping.territorios_scraper import buscar_territorios, buscar_ruas, buscar_numeros
 from gui.toast_notification import ToastNotification
 from utils.logger import log
 
@@ -171,7 +171,7 @@ class TerritoriosView(QWidget):
             return
 
         try:
-            dados = buscar_detalhes_territorio(url)
+            dados = buscar_ruas(url)
         except Exception as e:
             log(f"Erro ao buscar endereços: {e}", "erro")
             self.show_toast("Falha ao obter endereços.", "erro")
