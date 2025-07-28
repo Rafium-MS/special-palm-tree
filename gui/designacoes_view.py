@@ -3,6 +3,7 @@ from PyQt5.QtWidgets import (
     QTableWidget, QTableWidgetItem, QComboBox, QDateEdit, QMessageBox
 )
 from PyQt5.QtCore import QDate
+from datetime import datetime, timedelta
 from modules.designacoes import (
     listar_designacoes, criar_designacao, atualizar_designacao, remover_designacao
 )
@@ -11,6 +12,7 @@ from modules.saidas import listar_saidas
 from gui.notificacoes import sucesso, erro, aviso
 from gui.toast_notification import ToastNotification
 from utils.logger import log
+from database.db_manager import get_connection
 
 class DesignacoesView(QWidget):
     def __init__(self, parent=None):
@@ -19,8 +21,27 @@ class DesignacoesView(QWidget):
         self.setMinimumWidth(900)
         self.layout = QVBoxLayout()
         self.setLayout(self.layout)
-        # Guarda a janela pai para enviar notificações e atualizar o status
         self.parent_window = parent
+
+        # 🔘 Botões e filtro de meses
+        layout_botoes = QHBoxLayout()
+        self.btn_gerar_otimizado = QPushButton("Gerar Designação Otimizada")
+        self.btn_gerar_otimizado.clicked.connect(self.gerar_designacao_otimizada)
+
+        self.combo_meses = QComboBox()
+        self.combo_meses.addItems(["3", "6", "12"])
+        self.combo_meses.setCurrentText("3")
+
+        layout_botoes.addWidget(QLabel("Evitar repetição nos últimos"))
+        layout_botoes.addWidget(self.combo_meses)
+        layout_botoes.addWidget(QLabel("meses"))
+        layout_botoes.addStretch()
+        layout_botoes.addWidget(self.btn_gerar_otimizado)
+        self.layout.addLayout(layout_botoes)
+
+        # 📋 Tabela
+        self.tabela = QTableWidget()
+        self.layout.addWidget(self.tabela)
 
         # 🔽 Seletores
         form_layout = QHBoxLayout()
@@ -54,22 +75,15 @@ class DesignacoesView(QWidget):
         self.btn_adicionar = QPushButton("Adicionar")
         self.btn_atualizar = QPushButton("Atualizar Status")
         self.btn_remover = QPushButton("Remover")
-        self.btn_gerar_otimizado = QPushButton("Gerar Designação Otimizada")
 
         self.btn_adicionar.clicked.connect(self.adicionar)
         self.btn_atualizar.clicked.connect(self.atualizar)
         self.btn_remover.clicked.connect(self.remover)
-        self.btn_gerar_otimizado.clicked.connect(self.gerar_designacao_otimizada)
 
         botoes_layout.addWidget(self.btn_adicionar)
         botoes_layout.addWidget(self.btn_atualizar)
         botoes_layout.addWidget(self.btn_remover)
-        botoes_layout.addWidget(self.btn_gerar_otimizado)
         self.layout.addLayout(botoes_layout)
-
-        # Tabela
-        self.tabela = QTableWidget()
-        self.layout.addWidget(self.tabela)
 
         self.id_map_territorio = {}
         self.id_map_saida = {}
@@ -158,41 +172,6 @@ class DesignacoesView(QWidget):
             self.show_toast("Designação removida com sucesso.", "sucesso")
             self.carregar_tabela()
 
-    def gerar_designacao(self, territorio_id):
-        conn = get_connection()
-        cur = conn.cursor()
-
-        # Buscar todas as ruas do território
-        cur.execute("SELECT id, nome FROM ruas WHERE territorio_id = ?", (territorio_id,))
-        ruas = cur.fetchall()
-
-        designacao = []
-
-        for rua in ruas:
-            rua_id, nome_rua = rua
-
-            # Buscar os números mais recentes dessa rua
-            cur.execute("""
-                SELECT DISTINCT numero, tipo, status
-                FROM numeros
-                WHERE rua_id = ?
-                ORDER BY data_coleta DESC
-            """, (rua_id,))
-            numeros = cur.fetchall()
-
-            for numero, tipo, status in numeros:
-                if not self.numero_recente(rua_id, numero, meses=3):
-                    # Número elegível para designação
-                    designacao.append({
-                        "rua": nome_rua,
-                        "numero": numero,
-                        "tipo": tipo,
-                        "status": status
-                    })
-                    break  # pegar apenas um número por rua (ajustável)
-
-        conn.close()
-        return designacao
     def numero_recente(self, rua_id, numero, meses=3):
         conn = get_connection()
         cur = conn.cursor()
@@ -210,7 +189,6 @@ class DesignacoesView(QWidget):
 
         resultado = cur.fetchone()[0]
         conn.close()
-
         return resultado > 0
 
     def gerar_designacao_otimizada(self):
@@ -220,6 +198,7 @@ class DesignacoesView(QWidget):
         cur.execute("SELECT id, nome FROM territorios")
         territorios = cur.fetchall()
         designacoes = []
+        meses = int(self.combo_meses.currentText())
 
         for territorio_id, nome_territorio in territorios:
             cur.execute("SELECT id, nome FROM ruas WHERE territorio_id = ?", (territorio_id,))
@@ -235,9 +214,10 @@ class DesignacoesView(QWidget):
                 numeros = cur.fetchall()
 
                 for numero, tipo, status in numeros:
-                    if not self.numero_recente(rua_id, numero, meses=3):
+                    if not self.numero_recente(rua_id, numero, meses=meses):
                         designacoes.append([nome_territorio, nome_rua, numero, tipo, status])
-                        break  # apenas um número por rua
+                        break
+
         conn.close()
 
         self.tabela.setRowCount(len(designacoes))
@@ -249,6 +229,4 @@ class DesignacoesView(QWidget):
                 self.tabela.setItem(i, j, QTableWidgetItem(str(valor)))
 
         if self.parent_window:
-            self.parent_window.atualizar_status(
-                "Designação otimizada gerada com sucesso.", "sucesso"
-            )
+            self.parent_window.atualizar_status("Designação otimizada gerada com sucesso.", "sucesso")
