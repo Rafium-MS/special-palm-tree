@@ -43,4 +43,12 @@ Este repositório contém uma aplicação em Python para administração de terr
   pytest
   ```
 
+- **Atualizar um território via código**:
+  ```python
+  from modules.territorios import atualizar_territorio
+  atualizar_territorio(1, nome="Novo Nome")
+  ```
+  Apenas os campos `nome`, `url`, `status` e `observacoes` podem ser alterados.
+
 As funções de cada módulo estão comentadas no próprio código e podem ser utilizadas separadamente.
+O módulo **territorios** inclui `remover_completo(id)` para excluir um território junto com ruas e números relacionados.

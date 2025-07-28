@@ -4,10 +4,9 @@ from PyQt5.QtWidgets import (
     QFileDialog
 )
 from PyQt5.QtCore import QDate
-from datetime import datetime, timedelta
 from modules.designacoes import (
     listar_designacoes, criar_designacao, atualizar_designacao,
-    remover_designacao, salvar_designacoes_otimizadas
+    remover_designacao, salvar_designacoes_otimizadas, numero_recente
 )
 from modules.territorios import listar_territorios
 from modules.saidas import listar_saidas
@@ -186,25 +185,6 @@ class DesignacoesView(QWidget):
             self.show_toast("Designação removida com sucesso.", "sucesso")
             self.carregar_tabela()
 
-    def numero_recente(self, rua_id, numero, meses=3):
-        conn = get_connection()
-        cur = conn.cursor()
-
-        limite = datetime.now() - timedelta(days=30*meses)
-        limite_str = limite.strftime("%Y-%m-%d")
-
-        cur.execute("""
-            SELECT COUNT(*)
-            FROM numeros
-            WHERE rua_id = ?
-            AND numero = ?
-            AND DATE(data_coleta) >= DATE(?)
-        """, (rua_id, numero, limite_str))
-
-        resultado = cur.fetchone()[0]
-        conn.close()
-        return resultado > 0
-
     def gerar_designacao_otimizada(self):
         conn = get_connection()
         cur = conn.cursor()
@@ -228,7 +208,8 @@ class DesignacoesView(QWidget):
                 numeros = cur.fetchall()
 
                 for numero, tipo, status in numeros:
-                    if not self.numero_recente(rua_id, numero, meses=meses):
+                    if not numero_recente(rua_id, numero, meses=meses):
+
                         designacoes.append([nome_territorio, nome_rua, numero, tipo, status])
                         break
 

@@ -2,26 +2,16 @@ import requests
 from bs4 import BeautifulSoup
 from database.db_manager import get_connection
 from utils.logger import log
-import schedule
+from datetime import datetime
+import json
 import time
 from threading import Thread
+import schedule
 
-# 📥 Buscar todos os territórios e seus links
-def buscar_territorios():
-    url = "https://territorios.congregacao-leste-scs.com.br/territorios"
-    response = requests.get(url)
-    response.raise_for_status()
-    soup = BeautifulSoup(response.text, "html.parser")
-
-    territorios = []
-    for linha in soup.find_all("tr"):
-        colunas = linha.find_all("td")
-        if colunas:
-            nome = colunas[0].get_text(strip=True)
-            link_tag = colunas[0].find("a")
-            link = link_tag["href"] if link_tag else None
-            territorios.append({"nome": nome, "url": link})
-    return territorios
+# 📁 Ler JSON com lista de territórios
+def buscar_territorios_json(caminho="territorios_lista.json"):
+    with open(caminho, "r", encoding="utf-8") as f:
+        return json.load(f)
 
 # 📥 Buscar as ruas de um território
 def buscar_ruas(territorio_url):
@@ -48,11 +38,18 @@ def buscar_numeros(url_rua):
             tipo = cols[1].get_text(strip=True) if len(cols) > 1 else ""
             status = cols[2].get_text(strip=True) if len(cols) > 2 else ""
             data = cols[3].get_text(strip=True) if len(cols) > 3 else ""
+
+            # Padronizar data
+            try:
+                data_formatada = datetime.strptime(data, "%d/%m/%Y").strftime("%Y-%m-%d")
+            except:
+                data_formatada = None
+
             resultados.append({
                 "numero": numero,
                 "tipo": tipo,
                 "status": status,
-                "data": data
+                "data": data_formatada
             })
     return resultados
 
@@ -85,13 +82,21 @@ def salvar_no_banco(territorios):
                         cur.execute("INSERT INTO ruas (nome, url, territorio_id) VALUES (?, ?, ?)", (r['nome'], r['url'], territorio_id))
                         rua_id = cur.lastrowid
 
-                    # Buscar números de cada rua
                     numeros = buscar_numeros(r['url'])
                     for n in numeros:
+                        cur.execute("SELECT id FROM numeros WHERE rua_id = ? AND numero = ?", (rua_id, n['numero']))
+                        if cur.fetchone():
+                            continue  # evita duplicatas
                         cur.execute("""
                             INSERT INTO numeros (rua_id, numero, tipo, status, data)
                             VALUES (?, ?, ?, ?, ?)
                         """, (rua_id, n['numero'], n['tipo'], n['status'], n['data']))
+                        time.sleep(0.05)  # leve delay para respeitar o servidor
+
+                # Atualiza timestamp de atualização
+                agora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                cur.execute("UPDATE territorios SET ultima_atualizacao = ? WHERE id = ?", (agora, territorio_id))
+
             except Exception as e:
                 log(f"Erro ao buscar ruas do território {t['nome']}: {str(e)}", tipo="erro")
 
@@ -102,7 +107,7 @@ def salvar_no_banco(territorios):
 # ▶️ Execução direta
 def executar_scraper():
     try:
-        territorios = buscar_territorios()
+        territorios = buscar_territorios_json()
         salvar_no_banco(territorios)
     except Exception as e:
         log(f"Erro na execução do scraper: {str(e)}", tipo="erro")
@@ -118,7 +123,7 @@ def executar_scraper_com_interface(parent=None):
 
     try:
         show_toast("Importando territórios...", "info")
-        territorios = buscar_territorios()
+        territorios = buscar_territorios_json()
         salvar_no_banco(territorios)
         show_toast("Importação concluída com sucesso.", "sucesso")
     except Exception as e:

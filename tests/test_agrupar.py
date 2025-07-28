@@ -1,7 +1,8 @@
 import os
+import tempfile
 import unittest
 
-from database.db_manager import DB_NAME, init_db, get_connection
+import database.db_manager as db
 from modules.territorios import adicionar_territorio, agrupar_por_proximidade
 from modules.ruas import adicionar_rua
 from modules.numeros import adicionar_numero
@@ -10,11 +11,14 @@ from modules.numeros import adicionar_numero
 class TestAgruparProximidade(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        if os.path.exists(DB_NAME):
-            os.remove(DB_NAME)
-        init_db()
+        cls.temp = tempfile.NamedTemporaryFile(delete=False)
+        cls.temp.close()
+        db.DB_NAME = cls.temp.name
+        if os.path.exists(db.DB_NAME):
+            os.remove(db.DB_NAME)
+        db.init_db(db.DB_NAME)
         adicionar_territorio('T-Group')
-        conn = get_connection()
+        conn = db.get_connection(db.DB_NAME)
         cls.territorio_id = conn.cursor().execute(
             "SELECT id FROM territorios WHERE nome='T-Group'"
         ).fetchone()[0]
@@ -26,7 +30,10 @@ class TestAgruparProximidade(unittest.TestCase):
         conn.close()
         for n in range(1, 26):
             adicionar_numero(cls.rua_id, str(n))
-
+    @classmethod
+    def tearDownClass(cls):
+        if os.path.exists(cls.temp.name):
+            os.remove(cls.temp.name)
     def test_passo_dez(self):
         grupos = agrupar_por_proximidade(self.rua_id, passo=10)
         esperado = [

@@ -1,7 +1,30 @@
 from database.db_manager import get_connection
+ALLOWED_STATUS = {"novo", "aguardando", "em uso"}
+MAX_NOME_LENGTH = 100
+MAX_OBSERVACOES_LENGTH = 255
+
+
+def validate_territorio(nome=None, status=None, observacoes=None):
+    """Valida dados de um território.
+
+    Parâmetros são opcionais para permitir validações parciais.
+    """
+    if nome is not None:
+        if not str(nome).strip():
+            raise ValueError("Nome não pode ser vazio")
+        if len(nome) > MAX_NOME_LENGTH:
+            raise ValueError("Nome excede limite de caracteres")
+
+    if status is not None and status not in ALLOWED_STATUS:
+        raise ValueError("Status inválido")
+
+    if observacoes is not None and len(observacoes) > MAX_OBSERVACOES_LENGTH:
+        raise ValueError("Observações excedem limite de caracteres")
 
 # 🔹 Criar novo território
 def adicionar_territorio(nome, url=None, status="novo", observacoes=None):
+    validate_territorio(nome, status, observacoes)
+
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("""
@@ -25,21 +48,28 @@ def listar_territorios():
     return resultados
 
 # 🔹 Atualizar território
+ALLOWED_FIELDS = {"nome", "url", "status", "observacoes"}
 def atualizar_territorio(territorio_id, **kwargs):
+    """Atualiza um território permitindo apenas campos conhecidos."""
+    validate_territorio(
+        kwargs.get("nome"), kwargs.get("status"), kwargs.get("observacoes")
+    )
     campos = []
-    valores = []
+    valores = {}
     for chave, valor in kwargs.items():
-        campos.append(f"{chave} = ?")
-        valores.append(valor)
-    valores.append(territorio_id)
+        if chave in ALLOWED_FIELDS:
+            campos.append(f"{chave} = :{chave}")
+            valores[chave] = valor
+
+    if not campos:
+        return  # nada para atualizar
+
+    valores["id"] = territorio_id
 
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute(f"""
-        UPDATE territorios
-        SET {', '.join(campos)}
-        WHERE id = ?
-    """, valores)
+    sql = f"UPDATE territorios SET {', '.join(campos)} WHERE id = :id"
+    cur.execute(sql, valores)
     conn.commit()
     conn.close()
 
@@ -50,7 +80,22 @@ def remover_territorio(territorio_id):
     cur.execute("DELETE FROM territorios WHERE id = ?", (territorio_id,))
     conn.commit()
     conn.close()
-
+# 🔹 Remover território com todas as ruas e números
+def remover_completo(territorio_id):
+    """Remove o território e todos os registros vinculados a ele."""
+    conn = get_connection()
+    cur = conn.cursor()
+    # Exclui números associados às ruas do território
+    cur.execute(
+        "DELETE FROM numeros WHERE rua_id IN (SELECT id FROM ruas WHERE territorio_id = ?)",
+        (territorio_id,),
+    )
+    # Exclui as ruas do território
+    cur.execute("DELETE FROM ruas WHERE territorio_id = ?", (territorio_id,))
+    # Por fim, remove o próprio território
+    cur.execute("DELETE FROM territorios WHERE id = ?", (territorio_id,))
+    conn.commit()
+    conn.close()
 # 🔹 Buscar território por nome
 def buscar_por_nome(parte_nome):
     conn = get_connection()

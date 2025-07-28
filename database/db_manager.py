@@ -3,12 +3,19 @@ import sqlite3
 DB_NAME = "designacao_territorios.db"
 
 
-def get_connection():
-    return sqlite3.connect(DB_NAME)
+def get_connection(path: str | None = None):
+    """Return a connection to the SQLite database located at *path*.
+
+    If *path* is not provided, the module-level ``DB_NAME`` is used. This
+    allows tests to override ``DB_NAME`` dynamically.
+    """
+    if path is None:
+        path = DB_NAME
+    return sqlite3.connect(path)
 
 
-def init_db():
-    conn = get_connection()
+def init_db(path: str = DB_NAME):
+    conn = get_connection(path)
     cur = conn.cursor()
 
     cur.execute("""

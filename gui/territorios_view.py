@@ -5,7 +5,7 @@ from PyQt5.QtWidgets import (
 )
 from modules.territorios import (
     listar_territorios, adicionar_territorio, atualizar_territorio,
-    remover_territorio, buscar_por_nome, territorio_existe
+    remover_territorio, remover_completo, buscar_por_nome, territorio_existe
 )
 from scraping.territorios_scraper import buscar_territorios, buscar_ruas, buscar_numeros
 from gui.toast_notification import ToastNotification
@@ -145,8 +145,16 @@ class TerritoriosView(QWidget):
         nome = self.tabela.item(linha, 1).text()
         confirma = QMessageBox.question(self, "Confirmar", f"Deseja remover '{nome}'?")
         if confirma == QMessageBox.Yes:
-            remover_territorio(id_)
-            log(f"Território removido: ID={id_}, Nome={nome}")
+            confirma_total = QMessageBox.question(
+                self,
+                "Remover tudo",
+                "Remover também ruas e números associados?",
+            )
+            if confirma_total == QMessageBox.Yes:
+                remover_completo(id_)
+            else:
+                remover_territorio(id_)
+                log(f"Território removido: ID={id_}, Nome={nome}")
             self.carregar_todos()
             self.show_toast(f"'{nome}' removido com sucesso.", "sucesso")
             self.atualizar_status(f"Território '{nome}' removido.", "aviso")
