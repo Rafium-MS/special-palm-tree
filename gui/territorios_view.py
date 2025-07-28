@@ -1,6 +1,7 @@
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
-    QTableWidget, QTableWidgetItem, QInputDialog, QMessageBox, QDialog
+    QTableWidget, QTableWidgetItem, QInputDialog, QMessageBox, QDialog,
+    QTreeWidget, QTreeWidgetItem
 )
 from modules.territorios import (
     listar_territorios, adicionar_territorio, atualizar_territorio,
@@ -42,18 +43,21 @@ class TerritoriosView(QWidget):
         self.btn_remover = QPushButton("Remover")
         self.btn_importar = QPushButton("Importar da Web")
         self.btn_enderecos = QPushButton("Endereços")
+        self.btn_arvore = QPushButton("Árvore")
 
         self.btn_adicionar.clicked.connect(self.adicionar)
         self.btn_atualizar.clicked.connect(self.atualizar)
         self.btn_remover.clicked.connect(self.remover)
         self.btn_importar.clicked.connect(self.importar)
         self.btn_enderecos.clicked.connect(self.mostrar_enderecos)
+        self.btn_arvore.clicked.connect(self.mostrar_enderecos_como_arvore)
 
         botoes_layout.addWidget(self.btn_adicionar)
         botoes_layout.addWidget(self.btn_atualizar)
         botoes_layout.addWidget(self.btn_remover)
         botoes_layout.addWidget(self.btn_importar)
         botoes_layout.addWidget(self.btn_enderecos)
+        botoes_layout.addWidget(self.btn_arvore)
         self.layout.addLayout(botoes_layout)
         self.carregar_todos()
 
@@ -200,3 +204,42 @@ class TerritoriosView(QWidget):
         dialog.exec_()
         # Recarrega tabela principal caso alguma edição tenha ocorrido
         self.carregar_todos()
+
+    def mostrar_enderecos_como_arvore(self):
+        linha = self.get_linha_selecionada()
+        if linha is None:
+            return
+
+        territorio_id = int(self.tabela.item(linha, 0).text())
+        nome = self.tabela.item(linha, 1).text()
+
+        from modules.territorios import obter_territorio_completo
+        dados = obter_territorio_completo(territorio_id)
+        if not dados:
+            self.show_toast("Território não encontrado.", "erro")
+            return
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"Visualização em Árvore - {nome}")
+        layout = QVBoxLayout(dialog)
+        tree = QTreeWidget()
+        tree.setHeaderLabels(["Nome", "Informação"])
+
+        raiz = QTreeWidgetItem([dados["nome"], ""])
+        for rua in dados["ruas"]:
+            item_rua = QTreeWidgetItem([rua["nome"], "Rua"])
+            for num in rua["numeros"]:
+                info = f"{num['numero']} ({num['data']})" if num['data'] else str(num['numero'])
+                item_num = QTreeWidgetItem([info, "Número"])
+                item_rua.addChild(item_num)
+            raiz.addChild(item_rua)
+
+        tree.addTopLevelItem(raiz)
+        tree.expandAll()
+        layout.addWidget(tree)
+
+        btn_fechar = QPushButton("Fechar")
+        btn_fechar.clicked.connect(dialog.accept)
+        layout.addWidget(btn_fechar)
+
+        dialog.exec_()

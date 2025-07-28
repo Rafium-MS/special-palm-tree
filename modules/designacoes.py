@@ -94,3 +94,35 @@ def numero_recente(rua_id, numero, meses=3):
     conn.close()
 
     return resultado > 0  # True se foi usado recentemente
+def salvar_designacoes_otimizadas(registros):
+    """Salva lista de designações otimizadas na tabela dedicada."""
+    if not registros:
+        return 0
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.executemany(
+        """
+        INSERT INTO designacoes_otimizadas (territorio, rua, numero, tipo, status)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        registros,
+    )
+    conn.commit()
+    count = cur.rowcount
+    conn.close()
+    return count
+
+
+def listar_designacoes_otimizadas():
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT id, territorio, rua, numero, tipo, status, data_geracao, revisada
+        FROM designacoes_otimizadas
+        ORDER BY data_geracao DESC, territorio
+        """
+    )
+    resultados = cur.fetchall()
+    conn.close()
+    return resultados

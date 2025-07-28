@@ -77,6 +77,18 @@ def init_db():
         FOREIGN KEY (territorio_id) REFERENCES territorios(id)
     );
     """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS designacoes_otimizadas (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        territorio TEXT NOT NULL,
+        rua TEXT,
+        numero TEXT,
+        tipo TEXT,
+        status TEXT,
+        data_geracao DATE DEFAULT CURRENT_DATE,
+        revisada BOOLEAN DEFAULT 0
+    );
+    """)
 
     cur.execute("""
     CREATE TABLE IF NOT EXISTS log_acoes (

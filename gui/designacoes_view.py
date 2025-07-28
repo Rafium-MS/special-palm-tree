@@ -1,11 +1,13 @@
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QTableWidget, QTableWidgetItem, QComboBox, QDateEdit, QMessageBox
+    QTableWidget, QTableWidgetItem, QComboBox, QDateEdit, QMessageBox,
+    QFileDialog
 )
 from PyQt5.QtCore import QDate
 from datetime import datetime, timedelta
 from modules.designacoes import (
-    listar_designacoes, criar_designacao, atualizar_designacao, remover_designacao
+    listar_designacoes, criar_designacao, atualizar_designacao,
+    remover_designacao, salvar_designacoes_otimizadas
 )
 from modules.territorios import listar_territorios
 from modules.saidas import listar_saidas
@@ -22,11 +24,20 @@ class DesignacoesView(QWidget):
         self.layout = QVBoxLayout()
         self.setLayout(self.layout)
         self.parent_window = parent
+        self.designacoes_otimizadas = []
 
         # 🔘 Botões e filtro de meses
         layout_botoes = QHBoxLayout()
         self.btn_gerar_otimizado = QPushButton("Gerar Designação Otimizada")
         self.btn_gerar_otimizado.clicked.connect(self.gerar_designacao_otimizada)
+
+        self.btn_salvar_sugestoes = QPushButton("Salvar Sugestões")
+        self.btn_exportar_pdf = QPushButton("Exportar PDF")
+        self.btn_exportar_excel = QPushButton("Exportar Excel")
+
+        self.btn_salvar_sugestoes.clicked.connect(self.salvar_sugestoes)
+        self.btn_exportar_pdf.clicked.connect(self.exportar_pdf)
+        self.btn_exportar_excel.clicked.connect(self.exportar_excel)
 
         self.combo_meses = QComboBox()
         self.combo_meses.addItems(["3", "6", "12"])
@@ -37,6 +48,9 @@ class DesignacoesView(QWidget):
         layout_botoes.addWidget(QLabel("meses"))
         layout_botoes.addStretch()
         layout_botoes.addWidget(self.btn_gerar_otimizado)
+        layout_botoes.addWidget(self.btn_salvar_sugestoes)
+        layout_botoes.addWidget(self.btn_exportar_pdf)
+        layout_botoes.addWidget(self.btn_exportar_excel)
         self.layout.addLayout(layout_botoes)
 
         # 📋 Tabela
@@ -230,3 +244,60 @@ class DesignacoesView(QWidget):
 
         if self.parent_window:
             self.parent_window.atualizar_status("Designação otimizada gerada com sucesso.", "sucesso")
+# guarda dados para possivel salvamento ou exportacao
+        self.designacoes_otimizadas = designacoes
+
+    def obter_dados_tabela(self):
+        linhas = []
+        for i in range(self.tabela.rowCount()):
+            linha = []
+            for j in range(self.tabela.columnCount()):
+                item = self.tabela.item(i, j)
+                linha.append(item.text() if item else "")
+            linhas.append(linha)
+        return linhas
+
+    def salvar_sugestoes(self):
+        registros = self.obter_dados_tabela()
+        if not registros:
+            self.show_toast("Nenhuma designação para salvar.", "aviso")
+            return
+        count = salvar_designacoes_otimizadas(registros)
+        self.show_toast(f"{count} designações salvas para revisão.", "sucesso")
+
+    def exportar_excel(self):
+        import pandas as pd
+        registros = self.obter_dados_tabela()
+        if not registros:
+            self.show_toast("Tabela vazia.", "aviso")
+            return
+        colunas = [self.tabela.horizontalHeaderItem(i).text() for i in range(self.tabela.columnCount())]
+        df = pd.DataFrame(registros, columns=colunas)
+        caminho, _ = QFileDialog.getSaveFileName(self, "Exportar Excel", "designacoes.xlsx", "Excel (*.xlsx)")
+        if caminho:
+            df.to_excel(caminho, index=False)
+            self.show_toast("Exportado com sucesso!", "sucesso")
+
+    def exportar_pdf(self):
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib import colors
+        from reportlab.lib.units import cm
+        registros = self.obter_dados_tabela()
+        if not registros:
+            self.show_toast("Tabela vazia.", "aviso")
+            return
+        colunas = [self.tabela.horizontalHeaderItem(i).text() for i in range(self.tabela.columnCount())]
+        caminho, _ = QFileDialog.getSaveFileName(self, "Exportar PDF", "designacoes.pdf", "PDF (*.pdf)")
+        if not caminho:
+            return
+        doc = SimpleDocTemplate(caminho, pagesize=A4)
+        dados = [colunas] + registros
+        tabela = Table(dados, repeatRows=1)
+        tabela.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.black),
+            ("FONTSIZE", (0, 0), (-1, -1), 8),
+        ]))
+        doc.build([tabela])
+        self.show_toast("PDF gerado com sucesso!", "sucesso")
