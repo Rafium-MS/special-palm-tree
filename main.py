@@ -300,10 +300,6 @@ class EditorWindow(QMainWindow):
         splitter.setStretchFactor(1, 1)
 
         root.addWidget(splitter, 1)
-        # ...
-        self.editor = QPlainTextEdit(self)
-        self.editor.setPlaceholderText("Escreva aqui…")
-        self.editor.setTabStopDistance(4 * self.editor.fontMetrics().width(' '))
 
         # Fonte monoespaçada (fica melhor para Markdown)
         f = self.editor.font()
