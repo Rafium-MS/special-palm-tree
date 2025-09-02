@@ -40,6 +40,7 @@ from PyQt5.QtWidgets import (
     QMessageBox, QStatusBar, QLabel, QLineEdit, QPushButton, QStyle, QInputDialog,
     QMenu
 )
+from PyQt5.QtPrintSupport import QPrinter
 
 APP_NAME = "Editor de Textos"
 DEFAULT_WORKSPACE = Path.cwd() / "workspace"
@@ -379,6 +380,7 @@ class EditorWindow(QMainWindow):
         self.act_new_file = QAction(style.standardIcon(QStyle.SP_FileIcon), "Novo Arquivo (Ctrl+N)", self)
         self.act_save = QAction(style.standardIcon(QStyle.SP_DialogSaveButton), "Salvar (Ctrl+S)", self)
         self.act_save_as = QAction("Salvar Como… (Ctrl+Shift+S)", self)
+        self.act_export = QAction("Exportar…", self)
         self.act_rename = QAction("Renomear…", self)
         self.act_delete = QAction("Excluir…", self)
 
@@ -402,6 +404,7 @@ class EditorWindow(QMainWindow):
         self.toolbar.addAction(self.act_new_file)
         self.toolbar.addAction(self.act_save)
         self.toolbar.addAction(self.act_save_as)
+        self.toolbar.addAction(self.act_export)
         self.toolbar.addSeparator()
         self.toolbar.addAction(self.act_find)
         self.toolbar.addAction(self.act_toggle_theme)
@@ -419,6 +422,7 @@ class EditorWindow(QMainWindow):
         self.act_new_file.triggered.connect(self.new_file)
         self.act_save.triggered.connect(self.save_file)
         self.act_save_as.triggered.connect(self.save_file_as)
+        self.act_export.triggered.connect(self.export_document)
         self.act_rename.triggered.connect(self.rename_current_file)
         self.act_delete.triggered.connect(self.delete_current_file)
         self.act_find.triggered.connect(self.toggle_find)
@@ -496,6 +500,59 @@ class EditorWindow(QMainWindow):
             return
         self.current_file = Path(path)
         self.save_file()
+
+    def export_document(self):
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Exportar documento",
+            str(self.workspace),
+            "TXT (*.txt);;Markdown (*.md);;HTML (*.html);;PDF (*.pdf)",
+        )
+        if not path:
+            return
+        text = self.editor.toPlainText()
+        ext = Path(path).suffix.lower()
+        try:
+            if ext == ".txt":
+                Path(path).write_text(text, encoding="utf-8")
+            elif ext == ".md":
+                Path(path).write_text(text, encoding="utf-8")
+            elif ext in {".html", ".htm"}:
+                try:
+                    import markdown
+
+                    body = markdown.markdown(text)
+                except Exception:
+                    doc = QTextDocument()
+                    doc.setPlainText(text)
+                    body = doc.toHtml()
+                css = "body { font-family: 'Consolas', 'Courier New', monospace; padding: 1em; }"
+                html = (
+                    "<!DOCTYPE html><html><head><meta charset='utf-8'><style>"
+                    + css
+                    + "</style></head><body>"
+                    + body
+                    + "</body></html>"
+                )
+                Path(path).write_text(html, encoding="utf-8")
+            elif ext == ".pdf":
+                doc = QTextDocument()
+                try:
+                    import markdown
+
+                    doc.setHtml(markdown.markdown(text))
+                except Exception:
+                    doc.setPlainText(text)
+                printer = QPrinter(QPrinter.HighResolution)
+                printer.setOutputFormat(QPrinter.PdfFormat)
+                printer.setOutputFileName(path)
+                doc.print_(printer)
+            else:
+                QMessageBox.warning(self, APP_NAME, "Formato de exportação desconhecido.")
+                return
+            self.statusBar().showMessage("Documento exportado.", 2000)
+        except Exception as e:
+            QMessageBox.critical(self, APP_NAME, f"Erro ao exportar:\n{e}")
 
     def rename_current_file(self):
         if not self.current_file:
