@@ -1,0 +1,529 @@
+# -*- coding: utf-8 -*-
+"""
+Editor de Textos para Escritores (PyQt5)
+
+▶ Layout: divisor central (splitter)
+   • Esquerda: árvore de arquivos da pasta de trabalho
+   • Direita: editor de texto
+
+Recursos:
+- Escolher/alterar pasta de trabalho (padrão: ./workspace)
+- Abrir arquivos clicando na árvore
+- Novo arquivo / Nova pasta
+- Salvar, Salvar Como
+- Renomear, Excluir (com confirmação)
+- Autosave opcional a cada 30s (cria .autosave/<nome>.bak)
+- Contador de palavras e caracteres
+- Barra de busca (Ctrl+F) com próximo/anterior
+- Tema claro/escuro (toggle)
+- Atalhos: Ctrl+N, Ctrl+S, Ctrl+Shift+S, Ctrl+F, Ctrl+W
+- Confirma saída/alteração sem salvar
+
+Requisitos: PyQt5
+pip install PyQt5
+
+Execução:
+python main.py
+"""
+import os
+import sys
+import json
+import shutil
+from pathlib import Path
+
+from PyQt5.QtCore import Qt, QTimer, QModelIndex
+from PyQt5.QtGui import QCloseEvent, QKeySequence
+from PyQt5.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QSplitter, QFileSystemModel, QTreeView,
+    QPlainTextEdit, QVBoxLayout, QHBoxLayout, QToolBar, QAction, QFileDialog,
+    QMessageBox, QStatusBar, QLabel, QLineEdit, QPushButton, QStyle, QInputDialog,
+    QMenu
+)
+
+APP_NAME = "Editor de Textos"
+DEFAULT_WORKSPACE = Path.cwd() / "workspace"
+CONFIG_FILE = Path.cwd() / ".editor_config.json"
+AUTOSAVE_DIRNAME = ".autosave"
+SUPPORTED_TEXT_EXTS = {".txt", ".md", ".markdown", ".json", ".yaml", ".yml", ".ini", ".cfg", ".csv"}
+
+
+def human_count(text: str):
+    # Conta palavras e caracteres de forma simples (separado por whitespace)
+    words = len([w for w in text.split() if w.strip()])
+    chars = len(text)
+    return words, chars
+
+
+def ensure_dir(p: Path):
+    p.mkdir(parents=True, exist_ok=True)
+
+
+def load_config():
+    if CONFIG_FILE.exists():
+        try:
+            return json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+    return {}
+
+
+def save_config(cfg: dict):
+    try:
+        CONFIG_FILE.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
+    except Exception:
+        pass
+
+
+class FindBar(QWidget):
+    """Barra de busca simples com próximo/anterior"""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setVisible(False)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(6, 4, 6, 4)
+        self.input = QLineEdit(self)
+        self.input.setPlaceholderText("Buscar no texto…")
+        self.btn_prev = QPushButton("Anterior")
+        self.btn_next = QPushButton("Próximo")
+        self.btn_close = QPushButton(self.style().standardIcon(QStyle.SP_DialogCloseButton), "")
+        self.btn_close.setToolTip("Fechar busca (Esc)")
+        layout.addWidget(QLabel("Buscar:"))
+        layout.addWidget(self.input, 1)
+        layout.addWidget(self.btn_prev)
+        layout.addWidget(self.btn_next)
+        layout.addWidget(self.btn_close)
+        self.setLayout(layout)
+
+
+class EditorWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle(APP_NAME)
+        self.resize(1100, 700)
+
+        cfg = load_config()
+        workspace = Path(cfg.get("workspace", str(DEFAULT_WORKSPACE)))
+        ensure_dir(workspace)
+        self.workspace = workspace
+
+        # Estado do documento
+        self.current_file: Path | None = None
+        self.dirty = False
+        self.dark_mode = bool(cfg.get("dark_mode", False))
+
+        # Autosave
+        self.autosave_enabled = True
+        self.autosave_timer = QTimer(self)
+        self.autosave_timer.setInterval(30_000)  # 30s
+        self.autosave_timer.timeout.connect(self.autosave)
+        self.autosave_timer.start()
+
+        self._build_ui()
+        self._apply_theme(self.dark_mode)
+        self._connect_signals()
+
+    # UI ------------------------------------------------------------------
+    def _build_ui(self):
+        central = QWidget(self)
+        root = QVBoxLayout(central)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        # Toolbar
+        self.toolbar = QToolBar("Ferramentas", self)
+        self.toolbar.setMovable(False)
+        self.addToolBar(Qt.TopToolBarArea, self.toolbar)
+        self._build_actions()
+
+        # Barra de busca
+        self.find_bar = FindBar(self)
+        root.addWidget(self.find_bar)
+
+        # Splitter: esquerda árvore, direita editor
+        splitter = QSplitter(Qt.Horizontal, self)
+        splitter.setChildrenCollapsible(False)
+
+        # Modelo da árvore de arquivos
+        self.fs_model = QFileSystemModel(self)
+        self.fs_model.setRootPath(str(self.workspace))
+        self.fs_model.setReadOnly(False)
+
+        self.tree = QTreeView(self)
+        self.tree.setModel(self.fs_model)
+        self.tree.setRootIndex(self.fs_model.index(str(self.workspace)))
+        self.tree.setColumnWidth(0, 280)
+        for i in range(1, 4):
+            self.tree.hideColumn(i)
+        self.tree.setHeaderHidden(True)
+        self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
+
+        # Editor
+        self.editor = QPlainTextEdit(self)
+        self.editor.setPlaceholderText("Escreva aqui…")
+        self.editor.setTabStopDistance(4 * self.editor.fontMetrics().width(' '))
+
+        splitter.addWidget(self.tree)
+        splitter.addWidget(self.editor)
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
+
+        root.addWidget(splitter, 1)
+
+        # StatusBar
+        sb = QStatusBar(self)
+        self.lbl_path = QLabel("Pasta: " + str(self.workspace))
+        self.lbl_stats = QLabel("0 palavras • 0 caracteres")
+        sb.addWidget(self.lbl_path, 1)
+        sb.addPermanentWidget(self.lbl_stats)
+        self.setStatusBar(sb)
+
+        self.setCentralWidget(central)
+
+    def _build_actions(self):
+        style = self.style()
+        # Pasta de trabalho
+        self.act_choose_workspace = QAction(style.standardIcon(QStyle.SP_DirIcon), "Selecionar Pasta", self)
+        self.act_open_in_explorer = QAction("Abrir no Explorer/Finder", self)
+
+        # Arquivos
+        self.act_new_file = QAction(style.standardIcon(QStyle.SP_FileIcon), "Novo Arquivo (Ctrl+N)", self)
+        self.act_save = QAction(style.standardIcon(QStyle.SP_DialogSaveButton), "Salvar (Ctrl+S)", self)
+        self.act_save_as = QAction("Salvar Como… (Ctrl+Shift+S)", self)
+        self.act_rename = QAction("Renomear…", self)
+        self.act_delete = QAction("Excluir…", self)
+
+        # Busca e tema
+        self.act_find = QAction("Buscar (Ctrl+F)", self)
+        self.act_toggle_theme = QAction("Alternar Tema Claro/Escuro", self)
+
+        # Sair
+        self.act_close_tab = QAction("Fechar Arquivo (Ctrl+W)", self)
+
+        # Atalhos
+        self.act_new_file.setShortcut(QKeySequence.New)
+        self.act_save.setShortcut(QKeySequence.Save)
+        self.act_save_as.setShortcut(QKeySequence.SaveAs)
+        self.act_find.setShortcut(QKeySequence.Find)
+        self.act_close_tab.setShortcut(QKeySequence.Close)
+
+        # Add to toolbar
+        self.toolbar.addAction(self.act_choose_workspace)
+        self.toolbar.addSeparator()
+        self.toolbar.addAction(self.act_new_file)
+        self.toolbar.addAction(self.act_save)
+        self.toolbar.addAction(self.act_save_as)
+        self.toolbar.addSeparator()
+        self.toolbar.addAction(self.act_find)
+        self.toolbar.addAction(self.act_toggle_theme)
+        self.toolbar.addSeparator()
+        self.toolbar.addAction(self.act_open_in_explorer)
+
+    def _connect_signals(self):
+        self.editor.textChanged.connect(self._on_text_changed)
+        self.tree.doubleClicked.connect(self._on_tree_double_clicked)
+        self.tree.customContextMenuRequested.connect(self._on_tree_context_menu)
+
+        self.act_choose_workspace.triggered.connect(self.choose_workspace)
+        self.act_open_in_explorer.triggered.connect(self.open_workspace_in_explorer)
+        self.act_new_file.triggered.connect(self.new_file)
+        self.act_save.triggered.connect(self.save_file)
+        self.act_save_as.triggered.connect(self.save_file_as)
+        self.act_rename.triggered.connect(self.rename_current_file)
+        self.act_delete.triggered.connect(self.delete_current_file)
+        self.act_find.triggered.connect(self.toggle_find)
+        self.act_toggle_theme.triggered.connect(self.toggle_theme)
+        self.act_close_tab.triggered.connect(self.close_current_file)
+
+        self.find_bar.btn_close.clicked.connect(lambda: self.find_bar.setVisible(False))
+        self.find_bar.btn_next.clicked.connect(lambda: self.find_next(True))
+        self.find_bar.btn_prev.clicked.connect(lambda: self.find_next(False))
+        self.find_bar.input.returnPressed.connect(lambda: self.find_next(True))
+
+    # Ações ---------------------------------------------------------------
+    def choose_workspace(self):
+        path = QFileDialog.getExistingDirectory(self, "Selecionar pasta de trabalho", str(self.workspace))
+        if path:
+            # Verifica alterações não salvas
+            if not self.maybe_save_changes():
+                return
+            self.workspace = Path(path)
+            ensure_dir(self.workspace)
+            self.lbl_path.setText("Pasta: " + str(self.workspace))
+            self.fs_model.setRootPath(str(self.workspace))
+            self.tree.setRootIndex(self.fs_model.index(str(self.workspace)))
+            self.current_file = None
+            self.editor.clear()
+            self.dirty = False
+            cfg = load_config()
+            cfg["workspace"] = str(self.workspace)
+            save_config(cfg)
+
+    def open_workspace_in_explorer(self):
+        # Abre pasta no explorador do SO
+        path = str(self.workspace)
+        if sys.platform.startswith("win"):
+            os.startfile(path)  # type: ignore[attr-defined]
+        elif sys.platform == "darwin":
+            os.system(f"open '{path}'")
+        else:
+            os.system(f"xdg-open '{path}'")
+
+    def new_file(self):
+        name, ok = QInputDialog.getText(self, "Novo arquivo", "Nome do arquivo (ex.: texto.md):")
+        if not ok or not name.strip():
+            return
+        file_path = (self.workspace / name).resolve()
+        if file_path.exists():
+            QMessageBox.warning(self, APP_NAME, "Já existe um arquivo com esse nome.")
+            return
+        try:
+            ensure_dir(file_path.parent)
+            file_path.write_text("", encoding="utf-8")
+        except Exception as e:
+            QMessageBox.critical(self, APP_NAME, f"Erro ao criar arquivo:\n{e}")
+            return
+        # Seleciona e abre
+        idx = self.fs_model.index(str(file_path))
+        if idx.isValid():
+            self.tree.setCurrentIndex(idx)
+        self.open_file(file_path)
+
+    def save_file(self):
+        if not self.current_file:
+            return self.save_file_as()
+        try:
+            text = self.editor.toPlainText()
+            self.current_file.write_text(text, encoding="utf-8")
+            self.dirty = False
+            self.statusBar().showMessage("Salvo.", 2000)
+        except Exception as e:
+            QMessageBox.critical(self, APP_NAME, f"Erro ao salvar:\n{e}")
+
+    def save_file_as(self):
+        path, _ = QFileDialog.getSaveFileName(self, "Salvar como", str(self.workspace), "Textos (*.txt *.md *.markdown *.json *.yaml *.yml *.ini *.cfg *.csv);;Todos (*.*)")
+        if not path:
+            return
+        self.current_file = Path(path)
+        self.save_file()
+
+    def rename_current_file(self):
+        if not self.current_file:
+            QMessageBox.information(self, APP_NAME, "Nenhum arquivo aberto.")
+            return
+        new_name, ok = QInputDialog.getText(self, "Renomear arquivo", "Novo nome:", text=self.current_file.name)
+        if not ok or not new_name.strip():
+            return
+        new_path = self.current_file.with_name(new_name)
+        if new_path.exists():
+            QMessageBox.warning(self, APP_NAME, "Já existe um arquivo com esse nome.")
+            return
+        try:
+            self.current_file.rename(new_path)
+            self.current_file = new_path
+            self.statusBar().showMessage("Arquivo renomeado.", 2000)
+        except Exception as e:
+            QMessageBox.critical(self, APP_NAME, f"Erro ao renomear:\n{e}")
+
+    def delete_current_file(self):
+        if not self.current_file:
+            QMessageBox.information(self, APP_NAME, "Nenhum arquivo aberto.")
+            return
+        resp = QMessageBox.question(self, APP_NAME, f"Excluir definitivamente\n{self.current_file.name}?", QMessageBox.Yes | QMessageBox.No)
+        if resp == QMessageBox.Yes:
+            try:
+                self.current_file.unlink()
+                self.current_file = None
+                self.editor.clear()
+                self.dirty = False
+                self.statusBar().showMessage("Arquivo excluído.", 2000)
+            except Exception as e:
+                QMessageBox.critical(self, APP_NAME, f"Erro ao excluir:\n{e}")
+
+    def toggle_find(self):
+        self.find_bar.setVisible(not self.find_bar.isVisible())
+        if self.find_bar.isVisible():
+            self.find_bar.input.setFocus()
+            self.find_bar.input.selectAll()
+
+    def find_next(self, forward=True):
+        pattern = self.find_bar.input.text()
+        if not pattern:
+            return
+        doc = self.editor.document()
+        cursor = self.editor.textCursor()
+        flags = Qt.MatchFlags()
+        # QPlainTextEdit possui find simplificado via .find(), usa regex plain
+        found = self.editor.find(pattern) if forward else self.editor.find(pattern, QTextDocument.FindBackward)  # type: ignore[name-defined]
+        if not found:
+            # reinicia do começo/fim
+            cursor.movePosition(cursor.Start if forward else cursor.End)
+            self.editor.setTextCursor(cursor)
+            self.editor.find(pattern) if forward else self.editor.find(pattern, QTextDocument.FindBackward)  # type: ignore[name-defined]
+
+    def toggle_theme(self):
+        self.dark_mode = not self.dark_mode
+        self._apply_theme(self.dark_mode)
+        cfg = load_config()
+        cfg["dark_mode"] = self.dark_mode
+        save_config(cfg)
+
+    def close_current_file(self):
+        if not self.maybe_save_changes():
+            return
+        self.current_file = None
+        self.editor.clear()
+        self.dirty = False
+
+    # Helpers -------------------------------------------------------------
+    def _on_text_changed(self):
+        self.dirty = True
+        words, chars = human_count(self.editor.toPlainText())
+        self.lbl_stats.setText(f"{words} palavras • {chars} caracteres")
+
+    def _on_tree_double_clicked(self, index: QModelIndex):
+        if not index.isValid():
+            return
+        file_path = Path(self.fs_model.filePath(index))
+        if file_path.is_file():
+            # Verifica mudanças não salvas antes de trocar
+            if not self.maybe_save_changes():
+                return
+            self.open_file(file_path)
+
+    def _on_tree_context_menu(self, pos):
+        index = self.tree.indexAt(pos)
+        menu = QMenu(self)
+        act_new_file = menu.addAction("Novo arquivo…")
+        act_new_folder = menu.addAction("Nova pasta…")
+        if index.isValid():
+            file_path = Path(self.fs_model.filePath(index))
+            if file_path.is_file():
+                menu.addSeparator()
+                act_rename = menu.addAction("Renomear…")
+                act_delete = menu.addAction("Excluir…")
+        chosen = menu.exec_(self.tree.viewport().mapToGlobal(pos))
+        base_dir = self.workspace if not index.isValid() else Path(self.fs_model.filePath(index))
+        if base_dir.is_file():
+            base_dir = base_dir.parent
+
+        if chosen == act_new_file:
+            name, ok = QInputDialog.getText(self, "Novo arquivo", "Nome do arquivo:")
+            if ok and name.strip():
+                (base_dir / name).write_text("", encoding="utf-8")
+        elif chosen == act_new_folder:
+            name, ok = QInputDialog.getText(self, "Nova pasta", "Nome da pasta:")
+            if ok and name.strip():
+                ensure_dir(base_dir / name)
+        elif index.isValid():
+            file_path = Path(self.fs_model.filePath(index))
+            if file_path.is_file():
+                if chosen and chosen.text().startswith("Renomear"):
+                    new_name, ok = QInputDialog.getText(self, "Renomear", "Novo nome:", text=file_path.name)
+                    if ok and new_name.strip():
+                        new_path = file_path.with_name(new_name)
+                        if new_path.exists():
+                            QMessageBox.warning(self, APP_NAME, "Já existe um item com esse nome.")
+                        else:
+                            file_path.rename(new_path)
+                elif chosen and chosen.text().startswith("Excluir"):
+                    resp = QMessageBox.question(self, APP_NAME, f"Excluir {file_path.name}?", QMessageBox.Yes | QMessageBox.No)
+                    if resp == QMessageBox.Yes:
+                        file_path.unlink()
+
+    def _apply_theme(self, dark: bool):
+        if dark:
+            palette = {
+                "--bg": "#0f1115",
+                "--panel": "#151821",
+                "--text": "#e8e8e8",
+                "--muted": "#a0a0a0",
+                "--accent": "#5b9cff",
+            }
+        else:
+            palette = {
+                "--bg": "#fafafa",
+                "--panel": "#ffffff",
+                "--text": "#111111",
+                "--muted": "#666666",
+                "--accent": "#0b5cff",
+            }
+        # Aplica via stylesheet simples
+        self.setStyleSheet(
+            f"""
+            QMainWindow {{ background: {palette['--bg']}; color: {palette['--text']}; }}
+            QToolBar {{ background: {palette['--panel']}; border: 0; }}
+            QTreeView {{ background: {palette['--panel']}; color: {palette['--text']}; border-right: 1px solid rgba(0,0,0,0.1); }}
+            QPlainTextEdit {{ background: {palette['--panel']}; color: {palette['--text']}; selection-background-color: {palette['--accent']}; }}
+            QStatusBar {{ background: {palette['--panel']}; color: {palette['--text']}; }}
+            QLineEdit {{ background: {palette['--panel']}; color: {palette['--text']}; border: 1px solid rgba(0,0,0,0.25); padding: 4px; }}
+            QPushButton {{ background: {palette['--panel']}; color: {palette['--text']}; border: 1px solid rgba(0,0,0,0.25); padding: 4px 8px; }}
+            QPushButton:hover {{ border-color: {palette['--accent']}; }}
+            QMenu {{ background: {palette['--panel']}; color: {palette['--text']}; }}
+            """
+        )
+
+    def open_file(self, file_path: Path):
+        try:
+            text = file_path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            # Tenta latin-1
+            try:
+                text = file_path.read_text(encoding="latin-1")
+            except Exception as e:
+                QMessageBox.critical(self, APP_NAME, f"Não foi possível abrir o arquivo como texto.\n{e}")
+                return
+        except Exception as e:
+            QMessageBox.critical(self, APP_NAME, f"Erro ao abrir:\n{e}")
+            return
+        self.current_file = file_path
+        self.editor.setPlainText(text)
+        self.editor.setFocus()
+        self.dirty = False
+        self.setWindowTitle(f"{APP_NAME} — {file_path.name}")
+
+    def maybe_save_changes(self) -> bool:
+        if not self.dirty:
+            return True
+        resp = QMessageBox.question(self, APP_NAME, "O arquivo foi modificado. Salvar alterações?", QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel)
+        if resp == QMessageBox.Yes:
+            self.save_file()
+            return not self.dirty
+        return resp != QMessageBox.Cancel
+
+    def autosave(self):
+        if not self.autosave_enabled or not self.dirty:
+            return
+        if not self.current_file:
+            return
+        autosave_dir = self.workspace / AUTOSAVE_DIRNAME
+        ensure_dir(autosave_dir)
+        backup_path = autosave_dir / (self.current_file.name + ".bak")
+        try:
+            backup_path.write_text(self.editor.toPlainText(), encoding="utf-8")
+            self.statusBar().showMessage("Autosave concluído.", 1500)
+        except Exception:
+            pass
+
+    # Eventos -------------------------------------------------------------
+    def closeEvent(self, event: QCloseEvent):
+        if not self.maybe_save_changes():
+            event.ignore()
+            return
+        # salva config
+        cfg = load_config()
+        cfg["workspace"] = str(self.workspace)
+        cfg["dark_mode"] = self.dark_mode
+        save_config(cfg)
+        event.accept()
+
+
+def main():
+    ensure_dir(DEFAULT_WORKSPACE)
+    app = QApplication(sys.argv)
+    w = EditorWindow()
+    w.show()
+    sys.exit(app.exec_())
+
+
+if __name__ == "__main__":
+    main()
