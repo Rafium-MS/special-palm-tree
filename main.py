@@ -29,17 +29,47 @@ import os
 import sys
 import json
 import shutil
+import re
 from pathlib import Path
 
 from PyQt5.QtCore import Qt, QTimer, QModelIndex, QRegExp
-from PyQt5.QtGui import QCloseEvent, QKeySequence,QSyntaxHighlighter, QTextCharFormat, QColor, QFont, QTextDocument
+from PyQt5.QtGui import (
+    QCloseEvent,
+    QKeySequence,
+    QSyntaxHighlighter,
+    QTextCharFormat,
+    QColor,
+    QFont,
+    QTextDocument,
+    QTextCursor,
+)
 
 from PyQt5.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QSplitter, QFileSystemModel, QTreeView,
-    QPlainTextEdit, QTextBrowser, QVBoxLayout, QHBoxLayout, QToolBar, QAction, QFileDialog,
-    QMessageBox, QStatusBar, QLabel, QLineEdit, QPushButton, QStyle, QInputDialog,
-    QMenu
+    QApplication,
+    QMainWindow,
+    QWidget,
+    QSplitter,
+    QFileSystemModel,
+    QTreeView,
+    QPlainTextEdit,
+    QTextEdit,
+    QTextBrowser,
+    QVBoxLayout,
+    QHBoxLayout,
+    QToolBar,
+    QAction,
+    QFileDialog,
+    QMessageBox,
+    QStatusBar,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QStyle,
+    QInputDialog,
+    QMenu,
 )
+
+from spellchecker import SpellChecker
 
 APP_NAME = "Editor de Textos"
 DEFAULT_WORKSPACE = Path.cwd() / "workspace"
@@ -227,6 +257,36 @@ class FindBar(QWidget):
         self.setLayout(layout)
 
 
+class SpellPlainTextEdit(QPlainTextEdit):
+    """Editor com correção ortográfica no menu de contexto."""
+
+    def __init__(self, main_window):
+        super().__init__(main_window)
+        self.main_window = main_window
+
+    def contextMenuEvent(self, event):
+        menu = self.createStandardContextMenu()
+        cursor = self.cursorForPosition(event.pos())
+        cursor.select(QTextCursor.WordUnderCursor)
+        word = cursor.selectedText()
+        misspelled = getattr(self.main_window, "misspelled_words", set())
+        if word and word.lower() in misspelled:
+            menu.addSeparator()
+            suggestions = list(self.main_window.spell_checker.candidates(word.lower()))[:5]
+            for s in suggestions:
+                act = menu.addAction(s)
+                act.triggered.connect(
+                    lambda _, c=QTextCursor(cursor), w=s: self._replace_word(c, w)
+                )
+        menu.exec_(event.globalPos())
+
+    def _replace_word(self, cursor, new_word):
+        cursor.beginEditBlock()
+        cursor.insertText(new_word)
+        cursor.endEditBlock()
+        self.main_window.check_spelling()
+
+
 class EditorWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -237,6 +297,13 @@ class EditorWindow(QMainWindow):
         workspace = Path(cfg.get("workspace", str(DEFAULT_WORKSPACE)))
         ensure_dir(workspace)
         self.workspace = workspace
+
+        self.spell_checker = SpellChecker(language="pt")
+        self.misspelled_words = set()
+        self._spell_timer = QTimer(self)
+        self._spell_timer.setSingleShot(True)
+        self._spell_timer.setInterval(500)
+        self._spell_timer.timeout.connect(self.check_spelling)
 
         # Estado do documento
         self.current_file: Path | None = None
@@ -284,7 +351,7 @@ class EditorWindow(QMainWindow):
             self.tree.hideColumn(i)
         self.tree.setHeaderHidden(True)
 
-        self.editor = QPlainTextEdit(self)
+        self.editor = SpellPlainTextEdit(self)
         self.editor.setPlaceholderText("Escreva aqui…")
 
         try:
@@ -298,8 +365,6 @@ class EditorWindow(QMainWindow):
         self.editor.setFont(f)
 
         self.highlighter = MarkdownHighlighter(self.editor.document())
-
-        self.editor.textChanged.connect(lambda: self._update_stats())
 
         self.preview = QTextBrowser(self)
         self.preview.setOpenExternalLinks(True)
@@ -340,6 +405,28 @@ class EditorWindow(QMainWindow):
             doc.setPlainText(text)
             html = doc.toHtml()
         self.preview.setHtml(html)
+
+    def check_spelling(self):
+        text = self.editor.toPlainText()
+        words = re.findall(r"\b\w+\b", text.lower())
+        misspelled = self.spell_checker.unknown(words)
+        self.misspelled_words = misspelled
+        doc = self.editor.document()
+        selections = []
+        fmt = QTextCharFormat()
+        fmt.setUnderlineColor(QColor("red"))
+        fmt.setUnderlineStyle(QTextCharFormat.SpellCheckUnderline)
+        for word in misspelled:
+            cursor = QTextCursor(doc)
+            while True:
+                cursor = doc.find(word, cursor, QTextDocument.FindWholeWords)
+                if cursor.isNull():
+                    break
+                sel = QTextEdit.ExtraSelection()
+                sel.cursor = cursor
+                sel.format = fmt
+                selections.append(sel)
+        self.editor.setExtraSelections(selections)
 
     def _apply_theme(self, dark: bool):
         """Tema literário: claro sépia e escuro de alto contraste suave."""
@@ -570,6 +657,7 @@ class EditorWindow(QMainWindow):
         self.dirty = True
         words, chars = human_count(self.editor.toPlainText())
         self.lbl_stats.setText(f"{words} palavras • {chars} caracteres")
+        self._spell_timer.start()
 
     def _on_tree_double_clicked(self, index: QModelIndex):
         if not index.isValid():
