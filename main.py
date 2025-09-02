@@ -31,7 +31,7 @@ import json
 import shutil
 from pathlib import Path
 
-from PyQt5.QtCore import Qt, QTimer, QModelIndex
+from PyQt5.QtCore import Qt, QTimer, QModelIndex, QRegExp
 from PyQt5.QtGui import QCloseEvent, QKeySequence,QSyntaxHighlighter, QTextCharFormat, QColor, QFont, QTextDocument
 
 from PyQt5.QtWidgets import (
@@ -73,27 +73,6 @@ def save_config(cfg: dict):
         CONFIG_FILE.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
     except Exception:
         pass
-
-
-class FindBar(QWidget):
-    """Barra de busca simples com próximo/anterior"""
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setVisible(False)
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(6, 4, 6, 4)
-        self.input = QLineEdit(self)
-        self.input.setPlaceholderText("Buscar no texto…")
-        self.btn_prev = QPushButton("Anterior")
-        self.btn_next = QPushButton("Próximo")
-        self.btn_close = QPushButton(self.style().standardIcon(QStyle.SP_DialogCloseButton), "")
-        self.btn_close.setToolTip("Fechar busca (Esc)")
-        layout.addWidget(QLabel("Buscar:"))
-        layout.addWidget(self.input, 1)
-        layout.addWidget(self.btn_prev)
-        layout.addWidget(self.btn_next)
-        layout.addWidget(self.btn_close)
-        self.setLayout(layout)
 
 class MarkdownHighlighter(QSyntaxHighlighter):
     def __init__(self, parent=None):
@@ -227,6 +206,27 @@ class MarkdownHighlighter(QSyntaxHighlighter):
 
         self.setCurrentBlockState(0)
 
+class FindBar(QWidget):
+    """Barra de busca simples com próximo/anterior"""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setVisible(False)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(6, 4, 6, 4)
+        self.input = QLineEdit(self)
+        self.input.setPlaceholderText("Buscar no texto…")
+        self.btn_prev = QPushButton("Anterior")
+        self.btn_next = QPushButton("Próximo")
+        self.btn_close = QPushButton(self.style().standardIcon(QStyle.SP_DialogCloseButton), "")
+        self.btn_close.setToolTip("Fechar busca (Esc)")
+        layout.addWidget(QLabel("Buscar:"))
+        layout.addWidget(self.input, 1)
+        layout.addWidget(self.btn_prev)
+        layout.addWidget(self.btn_next)
+        layout.addWidget(self.btn_close)
+        self.setLayout(layout)
+
+
 class EditorWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -261,21 +261,16 @@ class EditorWindow(QMainWindow):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        # Toolbar
         self.toolbar = QToolBar("Ferramentas", self)
         self.toolbar.setMovable(False)
         self.addToolBar(Qt.TopToolBarArea, self.toolbar)
         self._build_actions()
 
-        # Barra de busca
         self.find_bar = FindBar(self)
         root.addWidget(self.find_bar)
 
-        # Splitter: esquerda árvore, direita editor
         splitter = QSplitter(Qt.Horizontal, self)
-        splitter.setChildrenCollapsible(False)
 
-        # Modelo da árvore de arquivos
         self.fs_model = QFileSystemModel(self)
         self.fs_model.setRootPath(str(self.workspace))
         self.fs_model.setReadOnly(False)
@@ -287,25 +282,16 @@ class EditorWindow(QMainWindow):
         for i in range(1, 4):
             self.tree.hideColumn(i)
         self.tree.setHeaderHidden(True)
-        self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
 
-        # Editor
         self.editor = QPlainTextEdit(self)
         self.editor.setPlaceholderText("Escreva aqui…")
-        self.editor.setTabStopDistance(4 * self.editor.fontMetrics().width(' '))
 
-        splitter.addWidget(self.tree)
-        splitter.addWidget(self.editor)
-        splitter.setStretchFactor(0, 0)
-        splitter.setStretchFactor(1, 1)
+        # Tabulação suave e fonte monoespaçada (melhor para Markdown)
+        try:
+            self.editor.setTabStopDistance(4 * self.editor.fontMetrics().width(' '))
+        except Exception:
+            pass
 
-        root.addWidget(splitter, 1)
-        # ...
-        self.editor = QPlainTextEdit(self)
-        self.editor.setPlaceholderText("Escreva aqui…")
-        self.editor.setTabStopDistance(4 * self.editor.fontMetrics().width(' '))
-
-        # Fonte monoespaçada (fica melhor para Markdown)
         f = self.editor.font()
         f.setStyleHint(QFont.Monospace)
         f.setFamily("Consolas, 'Courier New', monospace")
@@ -314,7 +300,24 @@ class EditorWindow(QMainWindow):
         # Realce de Markdown
         self.highlighter = MarkdownHighlighter(self.editor.document())
 
-        # StatusBar
+        # Contador em tempo real
+        self.editor.textChanged.connect(lambda: self._update_stats())
+
+        # Fonte monoespaçada
+        f = self.editor.font()
+        f.setStyleHint(QFont.Monospace)
+        f.setFamily("Consolas, 'Courier New', monospace")
+        self.editor.setFont(f)
+
+        # Realce Markdown
+        self.highlighter = MarkdownHighlighter(self.editor.document())
+
+        splitter.addWidget(self.tree)
+        splitter.addWidget(self.editor)
+        splitter.setStretchFactor(1, 1)
+
+        root.addWidget(splitter, 1)
+
         sb = QStatusBar(self)
         self.lbl_path = QLabel("Pasta: " + str(self.workspace))
         self.lbl_stats = QLabel("0 palavras • 0 caracteres")
@@ -323,6 +326,39 @@ class EditorWindow(QMainWindow):
         self.setStatusBar(sb)
 
         self.setCentralWidget(central)
+
+    def _update_stats(self):
+        words, chars = human_count(self.editor.toPlainText())
+        if hasattr(self, 'lbl_stats'):
+            self.lbl_stats.setText(f"{words} palavras • {chars} caracteres")
+
+    def _apply_theme(self, dark: bool):
+        """Tema literário: claro sépia e escuro de alto contraste suave."""
+        if dark:
+            bg = "#131417"  # fundo
+            panel = "#1a1c22"  # painéis
+            text = "#e6e6e6"  # texto principal
+            muted = "#9aa3ad"  # texto secundário
+            accent = "#86b7ff"  # destaque
+            border = "#2a2d36"
+        else:
+            bg = "#f5efe6"  # sépia claro
+            panel = "#fffaf2"  # painel quase branco
+            text = "#2b2a27"  # marrom grafite
+            muted = "#6a655d"  # marrom suave
+            accent = "#3b6fb6"  # azul editorial
+            border = "#e2d7c7"
+
+        self.setStyleSheet(f"""
+            QMainWindow {{ background: {bg}; color: {text}; }}
+            QToolBar {{ background: {panel}; border: 0; }}
+            QTreeView {{ background: {panel}; color: {text}; border-right: 1px solid {border}; }}
+            QPlainTextEdit {{ background: {panel}; color: {text}; selection-background-color: {accent}; }}
+            QStatusBar {{ background: {panel}; color: {text}; border-top: 1px solid {border}; }}
+            QLineEdit, QPushButton {{ background: {panel}; color: {text}; border: 1px solid {border}; padding: 4px 8px; }}
+            QPushButton:hover {{ border-color: {accent}; }}
+            QMenu {{ background: {panel}; color: {text}; border: 1px solid {border}; }}
+        """)
 
     def _build_actions(self):
         style = self.style()
@@ -577,21 +613,37 @@ class EditorWindow(QMainWindow):
 
     def _apply_theme(self, dark: bool):
         if dark:
+
+            # Tema escuro literário (contraste reduzido)
             palette = {
-                "--bg": "#0f1115",
-                "--panel": "#151821",
-                "--text": "#e8e8e8",
-                "--muted": "#a0a0a0",
-                "--accent": "#5b9cff",
+                "--bg": "#1e1e1e",
+                "--panel": "#252526",
+                "--text": "#dcdcdc",
+                "--muted": "#808080",
+                "--accent": "#569cd6",
             }
         else:
+            # Tema claro sépia
             palette = {
-                "--bg": "#fafafa",
-                "--panel": "#ffffff",
-                "--text": "#111111",
-                "--muted": "#666666",
-                "--accent": "#0b5cff",
+                "--bg": "#fdf6e3",
+                "--panel": "#fffaf0",
+                "--text": "#3e2f1c",
+                "--muted": "#8b7765",
+                "--accent": "#b58900",
             }
+        self.setStyleSheet(
+            f"""
+        QMainWindow {{ background: {palette['--bg']}; color: {palette['--text']}; }}
+        QPlainTextEdit {{ background: {palette['--panel']}; color: {palette['--text']}; selection-background-color: {palette['--accent']}; }}
+        QTreeView {{ background: {palette['--panel']}; color: {palette['--text']}; }}
+        QStatusBar {{ background: {palette['--panel']}; color: {palette['--text']}; }}
+        QToolBar {{ background: {palette['--panel']}; }}
+        QLabel {{ color: {palette['--text']}; }}
+        QLineEdit {{ background: {palette['--panel']}; color: {palette['--text']}; border: 1px solid {palette['--muted']}; }}
+        QPushButton {{ background: {palette['--panel']}; color: {palette['--text']}; border: 1px solid {palette['--muted']}; padding: 4px 8px; }}
+        QPushButton:hover {{ border-color: {palette['--accent']}; }}
+        """
+        )
         # Aplica via stylesheet simples
         self.setStyleSheet(
             f"""
