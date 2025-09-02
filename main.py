@@ -36,7 +36,7 @@ from PyQt5.QtGui import QCloseEvent, QKeySequence,QSyntaxHighlighter, QTextCharF
 
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QSplitter, QFileSystemModel, QTreeView,
-    QPlainTextEdit, QVBoxLayout, QHBoxLayout, QToolBar, QAction, QFileDialog,
+    QPlainTextEdit, QTextBrowser, QVBoxLayout, QHBoxLayout, QToolBar, QAction, QFileDialog,
     QMessageBox, QStatusBar, QLabel, QLineEdit, QPushButton, QStyle, QInputDialog,
     QMenu
 )
@@ -269,7 +269,8 @@ class EditorWindow(QMainWindow):
         self.find_bar = FindBar(self)
         root.addWidget(self.find_bar)
 
-        splitter = QSplitter(Qt.Horizontal, self)
+        tree_splitter = QSplitter(Qt.Horizontal, self)
+        editor_splitter = QSplitter(Qt.Horizontal, self)
 
         self.fs_model = QFileSystemModel(self)
         self.fs_model.setRootPath(str(self.workspace))
@@ -286,7 +287,6 @@ class EditorWindow(QMainWindow):
         self.editor = QPlainTextEdit(self)
         self.editor.setPlaceholderText("Escreva aqui…")
 
-        # Tabulação suave e fonte monoespaçada (melhor para Markdown)
         try:
             self.editor.setTabStopDistance(4 * self.editor.fontMetrics().width(' '))
         except Exception:
@@ -297,26 +297,24 @@ class EditorWindow(QMainWindow):
         f.setFamily("Consolas, 'Courier New', monospace")
         self.editor.setFont(f)
 
-        # Realce de Markdown
         self.highlighter = MarkdownHighlighter(self.editor.document())
 
-        # Contador em tempo real
         self.editor.textChanged.connect(lambda: self._update_stats())
 
-        # Fonte monoespaçada
-        f = self.editor.font()
-        f.setStyleHint(QFont.Monospace)
-        f.setFamily("Consolas, 'Courier New', monospace")
-        self.editor.setFont(f)
+        self.preview = QTextBrowser(self)
+        self.preview.setOpenExternalLinks(True)
 
-        # Realce Markdown
-        self.highlighter = MarkdownHighlighter(self.editor.document())
+        editor_splitter.addWidget(self.editor)
+        editor_splitter.addWidget(self.preview)
+        editor_splitter.setStretchFactor(0, 1)
 
-        splitter.addWidget(self.tree)
-        splitter.addWidget(self.editor)
-        splitter.setStretchFactor(1, 1)
+        tree_splitter.addWidget(self.tree)
+        tree_splitter.addWidget(editor_splitter)
+        tree_splitter.setStretchFactor(1, 1)
 
-        root.addWidget(splitter, 1)
+        root.addWidget(tree_splitter, 1)
+
+        self._update_preview()
 
         sb = QStatusBar(self)
         self.lbl_path = QLabel("Pasta: " + str(self.workspace))
@@ -331,6 +329,17 @@ class EditorWindow(QMainWindow):
         words, chars = human_count(self.editor.toPlainText())
         if hasattr(self, 'lbl_stats'):
             self.lbl_stats.setText(f"{words} palavras • {chars} caracteres")
+
+    def _update_preview(self):
+        text = self.editor.toPlainText()
+        try:
+            import markdown
+            html = markdown.markdown(text)
+        except Exception:
+            doc = QTextDocument()
+            doc.setPlainText(text)
+            html = doc.toHtml()
+        self.preview.setHtml(html)
 
     def _apply_theme(self, dark: bool):
         """Tema literário: claro sépia e escuro de alto contraste suave."""
@@ -401,6 +410,7 @@ class EditorWindow(QMainWindow):
 
     def _connect_signals(self):
         self.editor.textChanged.connect(self._on_text_changed)
+        self.editor.textChanged.connect(self._update_preview)
         self.tree.doubleClicked.connect(self._on_tree_double_clicked)
         self.tree.customContextMenuRequested.connect(self._on_tree_context_menu)
 
