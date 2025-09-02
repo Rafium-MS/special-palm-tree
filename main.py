@@ -32,7 +32,8 @@ import shutil
 from pathlib import Path
 
 from PyQt5.QtCore import Qt, QTimer, QModelIndex
-from PyQt5.QtGui import QCloseEvent, QKeySequence
+from PyQt5.QtGui import QCloseEvent, QKeySequence,QSyntaxHighlighter, QTextCharFormat, QColor, QFont, QTextDocument
+
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QSplitter, QFileSystemModel, QTreeView,
     QPlainTextEdit, QVBoxLayout, QHBoxLayout, QToolBar, QAction, QFileDialog,
@@ -94,6 +95,137 @@ class FindBar(QWidget):
         layout.addWidget(self.btn_close)
         self.setLayout(layout)
 
+class MarkdownHighlighter(QSyntaxHighlighter):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+    def _apply_format_range(self, start, end, fmt):
+        if start < 0 or end <= start:
+            return
+        self.setFormat(start, end - start, fmt)
+
+    def highlightBlock(self, text: str):
+        # ----- cercas de código ``` -----
+        fence = "```"
+        in_code = self.previousBlockState() == 1
+        if in_code:
+            code_fmt = QTextCharFormat()
+            code_fmt.setForeground(QColor("#dcdcdc"))
+            self._apply_format_range(0, len(text), code_fmt)
+            if text.strip().startswith(fence):
+                self.setCurrentBlockState(0)
+            else:
+                self.setCurrentBlockState(1)
+                return
+        if text.strip().startswith(fence):
+            fence_fmt = QTextCharFormat()
+            fence_fmt.setForeground(QColor("#9cdcfe"))
+            self._apply_format_range(0, len(text), fence_fmt)
+            self.setCurrentBlockState(1)
+            return
+
+        # ----- títulos (#, ##, ...) -----
+        if text.startswith('#'):
+            h_fmt = QTextCharFormat()
+            h_fmt.setForeground(QColor("#5b9cff"))
+            h_fmt.setFontWeight(QFont.Bold)
+            self._apply_format_range(0, len(text), h_fmt)
+
+        # ----- citações > -----
+        if text.lstrip().startswith('>'):
+            q_fmt = QTextCharFormat()
+            q_fmt.setForeground(QColor("#6a9955"))
+            q_fmt.setFontItalic(True)
+            self._apply_format_range(0, len(text), q_fmt)
+
+        # ----- linhas horizontais (---, ***, ___) -----
+        s = text.strip()
+        if s and len(s) >= 3 and (set(s) <= {'-'} or set(s) <= {'*'} or set(s) <= {'_'}):
+            hr_fmt = QTextCharFormat()
+            hr_fmt.setForeground(QColor("#888888"))
+            self._apply_format_range(0, len(text), hr_fmt)
+
+        # ----- listas -, *, + ou 1. 2. -----
+        ls = text.lstrip()
+        if ls.startswith(('- ', '* ', '+ ')):
+            li_fmt = QTextCharFormat()
+            li_fmt.setForeground(QColor("#b5cea8"))
+            li_fmt.setFontWeight(QFont.Bold)
+            start = text.index(ls)
+            self._apply_format_range(start, start + 2, li_fmt)
+        else:
+            i = 0
+            while i < len(ls) and ls[i].isdigit():
+                i += 1
+            if i > 0 and i + 1 < len(ls) and ls[i] == '.' and ls[i+1] == ' ':
+                li_fmt = QTextCharFormat()
+                li_fmt.setForeground(QColor("#b5cea8"))
+                li_fmt.setFontWeight(QFont.Bold)
+                start = text.index(ls)
+                self._apply_format_range(start, start + i + 1, li_fmt)
+
+        # ----- código inline `code` -----
+        code_fmt = QTextCharFormat()
+        code_fmt.setForeground(QColor("#9cdcfe"))
+        start = 0
+        while True:
+            a = text.find('`', start)
+            if a == -1: break
+            b = text.find('`', a + 1)
+            if b == -1: break
+            self._apply_format_range(a, b + 1, code_fmt)
+            start = b + 1
+
+        # ----- negrito ** ** e __ __ -----
+        bold_fmt = QTextCharFormat()
+        bold_fmt.setForeground(QColor("#e07a00"))
+        bold_fmt.setFontWeight(QFont.Bold)
+        for marker in ('**', '__'):
+            start = 0
+            while True:
+                a = text.find(marker, start)
+                if a == -1: break
+                b = text.find(marker, a + len(marker))
+                if b == -1: break
+                self._apply_format_range(a, b + len(marker), bold_fmt)
+                start = b + len(marker)
+
+        # ----- itálico * * e _ _ (simples, não sobrepõe negrito) -----
+        ital_fmt = QTextCharFormat()
+        ital_fmt.setForeground(QColor("#c678dd"))
+        ital_fmt.setFontItalic(True)
+        for marker in ('*', '_'):
+            start = 0
+            while True:
+                a = text.find(marker, start)
+                if a == -1: break
+                # pula ** ou __ (negrito)
+                if a + 1 < len(text) and text[a+1] == marker:
+                    start = a + 2
+                    continue
+                b = text.find(marker, a + 1)
+                if b == -1: break
+                self._apply_format_range(a, b + 1, ital_fmt)
+                start = b + 1
+
+        # ----- links [texto](url) -----
+        link_fmt = QTextCharFormat()
+        link_fmt.setForeground(QColor("#4fc1ff"))
+        link_fmt.setFontUnderline(True)
+        start = 0
+        while True:
+            a = text.find('[', start)
+            if a == -1: break
+            mid = text.find(']', a + 1)
+            if mid == -1 or mid + 1 >= len(text) or text[mid + 1] != '(':
+                start = a + 1
+                continue
+            b = text.find(')', mid + 2)
+            if b == -1: break
+            self._apply_format_range(a, b + 1, link_fmt)
+            start = b + 1
+
+        self.setCurrentBlockState(0)
 
 class EditorWindow(QMainWindow):
     def __init__(self):
@@ -168,6 +300,19 @@ class EditorWindow(QMainWindow):
         splitter.setStretchFactor(1, 1)
 
         root.addWidget(splitter, 1)
+        # ...
+        self.editor = QPlainTextEdit(self)
+        self.editor.setPlaceholderText("Escreva aqui…")
+        self.editor.setTabStopDistance(4 * self.editor.fontMetrics().width(' '))
+
+        # Fonte monoespaçada (fica melhor para Markdown)
+        f = self.editor.font()
+        f.setStyleHint(QFont.Monospace)
+        f.setFamily("Consolas, 'Courier New', monospace")
+        self.editor.setFont(f)
+
+        # Realce de Markdown
+        self.highlighter = MarkdownHighlighter(self.editor.document())
 
         # StatusBar
         sb = QStatusBar(self)
