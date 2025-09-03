@@ -71,7 +71,11 @@ def import_batch(src: Path, dest_workspace: Path) -> None:
                 if file.suffix.lower() not in {".md", ".txt"}:
                     continue
                 target = dest_chap / file.name
-                target.write_text(file.read_text(encoding="utf-8"), encoding="utf-8")
+                try:
+                    text = file.read_text(encoding="utf-8")
+                except UnicodeDecodeError:
+                    text = file.read_text(encoding="latin-1")
+                target.write_text(text, encoding="utf-8")
 
 
 def export_modules(workspace: Path, modules: Iterable[str], dest_zip: Path) -> None:
