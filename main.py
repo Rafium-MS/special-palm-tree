@@ -32,7 +32,7 @@ import shutil
 import re
 from pathlib import Path
 
-from PyQt5.QtCore import Qt, QTimer, QModelIndex, QRegExp
+from PyQt5.QtCore import Qt, QTimer, QModelIndex, QRegExp, QSortFilterProxyModel
 from PyQt5.QtGui import (
     QCloseEvent,
     QKeySequence,
@@ -70,6 +70,7 @@ from PyQt5.QtWidgets import (
     QStyle,
     QInputDialog,
     QMenu,
+    QListWidget,
 )
 from PyQt5.QtPrintSupport import QPrinter
 
@@ -135,6 +136,32 @@ class FavoriteFileSystemModel(QFileSystemModel):
             if path in self.favorites:
                 return self.favorite_icon
         return super().data(index, role)
+
+
+class TagFilterProxyModel(QSortFilterProxyModel):
+    """Proxy model that filters items based on assigned tags."""
+
+    def __init__(self, tags: dict[str, list[str]], parent=None):
+        super().__init__(parent)
+        self.tags = tags
+        self.filter_tag: str = ""
+
+    def set_filter_tag(self, tag: str):
+        self.filter_tag = tag
+        self.invalidateFilter()
+
+    def filterAcceptsRow(self, source_row: int, source_parent: QModelIndex) -> bool:  # type: ignore[override]
+        if not self.filter_tag:
+            return True
+        index = self.sourceModel().index(source_row, 0, source_parent)
+        path = self.sourceModel().filePath(index)
+        if os.path.isdir(path):
+            for i in range(self.sourceModel().rowCount(index)):
+                if self.filterAcceptsRow(i, index):
+                    return True
+            return False
+        tags = self.tags.get(path, [])
+        return self.filter_tag in tags
 
 class MarkdownHighlighter(QSyntaxHighlighter):
     def __init__(self, parent=None):
@@ -331,6 +358,7 @@ class EditorWindow(QMainWindow):
         self.workspace = workspace
 
         self.favorites: set[str] = set(cfg.get("favorites", []))
+        self.tags: dict[str, list[str]] = cfg.get("tags", {})
         self.icon_favorite = QIcon.fromTheme("star")
         if self.icon_favorite.isNull():
             self.icon_favorite = self.style().standardIcon(QStyle.SP_DialogYesButton)
@@ -382,9 +410,12 @@ class EditorWindow(QMainWindow):
         self.fs_model.setRootPath(str(self.workspace))
         self.fs_model.setReadOnly(False)
 
+        self.tag_proxy = TagFilterProxyModel(self.tags, self)
+        self.tag_proxy.setSourceModel(self.fs_model)
+
         self.tree = QTreeView(self)
-        self.tree.setModel(self.fs_model)
-        self.tree.setRootIndex(self.fs_model.index(str(self.workspace)))
+        self.tree.setModel(self.tag_proxy)
+        self.tree.setRootIndex(self.tag_proxy.mapFromSource(self.fs_model.index(str(self.workspace))))
         self.tree.setColumnWidth(0, 280)
         for i in range(1, 4):
             self.tree.hideColumn(i)
@@ -400,10 +431,24 @@ class EditorWindow(QMainWindow):
 
         fav_label = QLabel("Favoritos", self)
 
+        tag_label = QLabel("Tags", self)
+        self.tag_filter_input = QLineEdit(self)
+        self.tag_filter_input.setPlaceholderText("Filtrar por tag…")
+        self.tag_filter_input.returnPressed.connect(lambda: self.filter_tree_by_tag(self.tag_filter_input.text()))
+        self.tag_list = QListWidget(self)
+        self.tag_list.setFixedHeight(80)
+        self.tag_list.itemClicked.connect(lambda item: self.filter_tree_by_tag(item.text()))
+        btn_clear_tags = QPushButton("Limpar filtro", self)
+        btn_clear_tags.clicked.connect(lambda: self.filter_tree_by_tag(""))
+
         tree_container = QWidget(self)
         tree_layout = QVBoxLayout(tree_container)
         tree_layout.setContentsMargins(0, 0, 0, 0)
         tree_layout.setSpacing(0)
+        tree_layout.addWidget(tag_label)
+        tree_layout.addWidget(self.tag_filter_input)
+        tree_layout.addWidget(self.tag_list)
+        tree_layout.addWidget(btn_clear_tags)
         tree_layout.addWidget(fav_label)
         tree_layout.addWidget(self.fav_view)
         tree_layout.addWidget(self.tree, 1)
@@ -437,6 +482,7 @@ class EditorWindow(QMainWindow):
         root.addWidget(tree_splitter, 1)
 
         self._update_preview()
+        self._refresh_tags_view()
         self._refresh_favorites_view()
 
         sb = QStatusBar(self)
@@ -642,6 +688,22 @@ class EditorWindow(QMainWindow):
         cfg["favorites"] = list(self.favorites)
         save_config(cfg)
 
+    # Tags ---------------------------------------------------------------
+    def _refresh_tags_view(self):
+        self.tag_list.clear()
+        all_tags = sorted({tag for tags in self.tags.values() for tag in tags})
+        for t in all_tags:
+            self.tag_list.addItem(t)
+
+    def save_tags(self):
+        cfg = load_config()
+        cfg["tags"] = self.tags
+        save_config(cfg)
+
+    def filter_tree_by_tag(self, tag: str):
+        self.tag_filter_input.setText(tag)
+        self.tag_proxy.set_filter_tag(tag)
+
     def _on_fav_double_clicked(self, index: QModelIndex):
         if not index.isValid():
             return
@@ -673,7 +735,8 @@ class EditorWindow(QMainWindow):
             ensure_dir(self.workspace)
             self.lbl_path.setText("Pasta: " + str(self.workspace))
             self.fs_model.setRootPath(str(self.workspace))
-            self.tree.setRootIndex(self.fs_model.index(str(self.workspace)))
+            root_idx = self.fs_model.index(str(self.workspace))
+            self.tree.setRootIndex(self.tag_proxy.mapFromSource(root_idx))
             self.current_file = None
             self.editor.clear()
             self.dirty = False
@@ -708,7 +771,7 @@ class EditorWindow(QMainWindow):
         # Seleciona e abre
         idx = self.fs_model.index(str(file_path))
         if idx.isValid():
-            self.tree.setCurrentIndex(idx)
+            self.tree.setCurrentIndex(self.tag_proxy.mapFromSource(idx))
         self.open_file(file_path)
 
     def save_file(self):
@@ -859,7 +922,8 @@ class EditorWindow(QMainWindow):
     def _on_tree_double_clicked(self, index: QModelIndex):
         if not index.isValid():
             return
-        file_path = Path(self.fs_model.filePath(index))
+        src_index = self.tag_proxy.mapToSource(index)
+        file_path = Path(self.fs_model.filePath(src_index))
         if file_path.is_file():
             # Verifica mudanças não salvas antes de trocar
             if not self.maybe_save_changes():
@@ -872,19 +936,25 @@ class EditorWindow(QMainWindow):
         act_new_file = menu.addAction("Novo arquivo…")
         act_new_folder = menu.addAction("Nova pasta…")
         act_favorite = None
+        act_add_tag = None
+        act_remove_tag = None
         file_path = None
         if index.isValid():
-            file_path = Path(self.fs_model.filePath(index))
+            src_index = self.tag_proxy.mapToSource(index)
+            file_path = Path(self.fs_model.filePath(src_index))
             if str(file_path) in self.favorites:
                 act_favorite = menu.addAction("Remover dos Favoritos")
             else:
                 act_favorite = menu.addAction("Adicionar aos Favoritos")
+            act_add_tag = menu.addAction("Adicionar Tag…")
+            if str(file_path) in self.tags and self.tags[str(file_path)]:
+                act_remove_tag = menu.addAction("Remover Tag…")
             if file_path.is_file():
                 menu.addSeparator()
                 act_rename = menu.addAction("Renomear…")
                 act_delete = menu.addAction("Excluir…")
         chosen = menu.exec_(self.tree.viewport().mapToGlobal(pos))
-        base_dir = self.workspace if not index.isValid() else Path(self.fs_model.filePath(index))
+        base_dir = self.workspace if not index.isValid() else Path(self.fs_model.filePath(self.tag_proxy.mapToSource(index)))
         if base_dir.is_file():
             base_dir = base_dir.parent
 
@@ -901,6 +971,28 @@ class EditorWindow(QMainWindow):
                 self.remove_favorite(file_path)
             else:
                 self.add_favorite(file_path)
+        elif chosen == act_add_tag and file_path is not None:
+            tag, ok = QInputDialog.getText(self, "Adicionar Tag", "Tag:")
+            if ok and tag.strip():
+                path_str = str(file_path)
+                tags = self.tags.setdefault(path_str, [])
+                if tag not in tags:
+                    tags.append(tag)
+                    self.save_tags()
+                    self._refresh_tags_view()
+                    self.tag_proxy.invalidateFilter()
+        elif chosen == act_remove_tag and file_path is not None:
+            path_str = str(file_path)
+            tags = self.tags.get(path_str, [])
+            if tags:
+                tag, ok = QInputDialog.getItem(self, "Remover Tag", "Tag:", tags, 0, False)
+                if ok and tag:
+                    tags.remove(tag)
+                    if not tags:
+                        del self.tags[path_str]
+                    self.save_tags()
+                    self._refresh_tags_view()
+                    self.tag_proxy.invalidateFilter()
         elif index.isValid() and file_path and file_path.is_file():
             if chosen and chosen.text().startswith("Renomear"):
                 new_name, ok = QInputDialog.getText(self, "Renomear", "Novo nome:", text=file_path.name)
