@@ -3,6 +3,7 @@ import sys
 import json
 import shutil
 import re
+import getpass
 from datetime import datetime
 from pathlib import Path
 
@@ -84,7 +85,7 @@ from .economico import MainWindow as EconomicoWindow
 from .linha_do_tempo import MainWindow as LinhaDoTempoWindow
 from .religioes_faccoes import MainWindow as ReligioesFaccoesWindow
 from .cidades_planetas import MainWindow as CidadesPlanetasWindow
-from .theme import apply_theme, THEMES as AVAILABLE_THEMES
+from .theme import apply_theme, load_theme, THEMES as AVAILABLE_THEMES
 from icons import icon
 
 class FavoriteFileSystemModel(QFileSystemModel):
@@ -611,6 +612,9 @@ class EditorWindow(QMainWindow):
         workspace = Path(cfg.get("workspace", str(DEFAULT_WORKSPACE)))
         ensure_dir(workspace)
         self.workspace = workspace
+        self.project_id = self.workspace.name
+        self.user_id = getpass.getuser()
+        self.theme = load_theme(self.project_id, self.user_id)
 
         self.favorites: set[str] = set(cfg.get("favorites", []))
         self.tags: dict[str, list[str]] = cfg.get("tags", {})
@@ -636,7 +640,6 @@ class EditorWindow(QMainWindow):
         # Estado do documento
         self.current_file: Path | None = None
         self.dirty = False
-        self.theme = cfg.get("theme", "light")
 
         # Daily writing stats
         self.daily_word_goal = int(cfg.get("daily_word_goal", 0))
@@ -675,7 +678,7 @@ class EditorWindow(QMainWindow):
         line_spacing = float(cfg.get("line_spacing", 1.0))
         self.set_line_spacing(line_spacing)
 
-        apply_theme(self.theme)
+        apply_theme(self.theme, self.project_id, self.user_id)
         self._connect_signals()
         self._update_stats()
 
@@ -1583,10 +1586,7 @@ class EditorWindow(QMainWindow):
         order = list(AVAILABLE_THEMES.keys())
         idx = order.index(self.theme)
         self.theme = order[(idx + 1) % len(order)]
-        apply_theme(self.theme)
-        cfg = load_config()
-        cfg["theme"] = self.theme
-        save_config(cfg)
+        apply_theme(self.theme, self.project_id, self.user_id)
 
     def close_current_file(self):
         if not self.maybe_save_changes():
@@ -1842,7 +1842,6 @@ class EditorWindow(QMainWindow):
         # salva config
         cfg = load_config()
         cfg["workspace"] = str(self.workspace)
-        cfg["theme"] = self.theme
         cfg["favorites"] = list(self.favorites)
         cfg["shortcuts"] = self.shortcuts
         cfg["line_spacing"] = getattr(self, "line_spacing", 1.0)
