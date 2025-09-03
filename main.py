@@ -612,6 +612,92 @@ class GlobalSearchDialog(QDialog):
         self.accept()
 
 
+class PomodoroDialog(QDialog):
+    """Dialogo simples de Pomodoro para ciclos de trabalho/pausa."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Pomodoro")
+        self.work_duration = 25 * 60
+        self.break_duration = 5 * 60
+        self.remaining = self.work_duration
+        self.is_work = True
+        self.sessions = 0
+        self.session_words: list[int] = []
+        self.start_words = 0
+
+        layout = QVBoxLayout(self)
+        self.lbl_phase = QLabel("Trabalho", self)
+        self.lbl_phase.setAlignment(Qt.AlignCenter)
+        layout.addWidget(self.lbl_phase)
+        self.lbl_timer = QLabel(self._fmt(self.remaining), self)
+        self.lbl_timer.setAlignment(Qt.AlignCenter)
+        layout.addWidget(self.lbl_timer)
+        self.lbl_sessions = QLabel("Sessões concluídas: 0", self)
+        layout.addWidget(self.lbl_sessions)
+        self.lbl_last = QLabel("Última sessão: 0 palavras", self)
+        layout.addWidget(self.lbl_last)
+
+        btns = QHBoxLayout()
+        self.btn_start = QPushButton("Iniciar", self)
+        self.btn_pause = QPushButton("Pausar", self)
+        self.btn_reset = QPushButton("Resetar", self)
+        btns.addWidget(self.btn_start)
+        btns.addWidget(self.btn_pause)
+        btns.addWidget(self.btn_reset)
+        layout.addLayout(btns)
+
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self._tick)
+
+        self.btn_start.clicked.connect(self.start)
+        self.btn_pause.clicked.connect(self.pause)
+        self.btn_reset.clicked.connect(self.reset)
+
+    def _fmt(self, secs: int) -> str:
+        return f"{secs // 60:02d}:{secs % 60:02d}"
+
+    def start(self):
+        if not self.timer.isActive():
+            self.timer.start(1000)
+            parent = self.parent()
+            if parent and hasattr(parent, "current_stats"):
+                self.start_words = parent.current_stats.get("words", 0)
+
+    def pause(self):
+        if self.timer.isActive():
+            self.timer.stop()
+
+    def reset(self):
+        self.timer.stop()
+        self.is_work = True
+        self.remaining = self.work_duration
+        self.lbl_phase.setText("Trabalho")
+        self.lbl_timer.setText(self._fmt(self.remaining))
+
+    def _tick(self):
+        self.remaining -= 1
+        if self.remaining <= 0:
+            parent = self.parent()
+            if self.is_work:
+                self.sessions += 1
+                words = 0
+                if parent and hasattr(parent, "current_stats"):
+                    words = parent.current_stats.get("words", 0) - self.start_words
+                self.session_words.append(words)
+                self.lbl_sessions.setText(f"Sessões concluídas: {self.sessions}")
+                self.lbl_last.setText(f"Última sessão: {words} palavras")
+                self.remaining = self.break_duration
+                self.is_work = False
+                self.lbl_phase.setText("Pausa")
+            else:
+                self.remaining = self.work_duration
+                self.is_work = True
+                self.lbl_phase.setText("Trabalho")
+                if parent and hasattr(parent, "current_stats"):
+                    self.start_words = parent.current_stats.get("words", 0)
+        self.lbl_timer.setText(self._fmt(self.remaining))
+
 class EditorWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -848,6 +934,13 @@ class EditorWindow(QMainWindow):
             html = doc.toHtml()
         self.preview.setHtml(html)
 
+    def show_pomodoro_dialog(self):
+        if not hasattr(self, "pomodoro_dialog"):
+            self.pomodoro_dialog = PomodoroDialog(self)
+        self.pomodoro_dialog.show()
+        self.pomodoro_dialog.raise_()
+        self.pomodoro_dialog.activateWindow()
+
     def show_stats_dialog(self):
         stats = getattr(self, "current_stats", None)
         if not stats:
@@ -932,6 +1025,7 @@ class EditorWindow(QMainWindow):
         self.act_global_find = QAction("Buscar no Workspace (Ctrl+Shift+F)", self)
         self.act_toggle_theme = QAction("Alternar Tema Claro/Escuro", self)
         self.act_show_stats = QAction("Estatísticas…", self)
+        self.act_start_pomodoro = QAction(style.standardIcon(QStyle.SP_MediaPlay), "Pomodoro (Ctrl+Alt+P)", self)
 
         # Interface
         self.act_toggle_sidebar = QAction("Alternar Barra Lateral", self)
@@ -955,6 +1049,7 @@ class EditorWindow(QMainWindow):
         self.act_global_find.setShortcut(QKeySequence("Ctrl+Shift+F"))
         self.act_close_tab.setShortcut(QKeySequence.Close)
         self.act_toggle_sidebar.setShortcut(QKeySequence("F9"))
+        self.act_start_pomodoro.setShortcut(QKeySequence("Ctrl+Alt+P"))
 
         # Add to toolbar
         self.toolbar.addAction(self.act_choose_workspace)
@@ -971,6 +1066,7 @@ class EditorWindow(QMainWindow):
         self.toolbar.addAction(self.act_focus_mode)
         self.toolbar.addSeparator()
         self.toolbar.addAction(self.act_open_in_explorer)
+        self.toolbar.addAction(self.act_start_pomodoro)
         self.toolbar.addAction(self.act_show_stats)
 
         self._apply_shortcuts()
@@ -986,6 +1082,7 @@ class EditorWindow(QMainWindow):
             "close_file": self.act_close_tab,
             "toggle_sidebar": self.act_toggle_sidebar,
             "focus_mode": self.act_focus_mode,
+            "start_pomodoro": self.act_start_pomodoro,
         }
         for name, seq in self.shortcuts.items():
             act = mapping.get(name)
@@ -1013,6 +1110,7 @@ class EditorWindow(QMainWindow):
         self.act_toggle_theme.triggered.connect(self.toggle_theme)
         self.act_close_tab.triggered.connect(self.close_current_file)
         self.act_show_stats.triggered.connect(self.show_stats_dialog)
+        self.act_start_pomodoro.triggered.connect(self.show_pomodoro_dialog)
         self.act_toggle_sidebar.triggered.connect(self.toggle_sidebar)
         self.act_focus_mode.triggered.connect(self.toggle_focus_mode)
         self.act_set_font.triggered.connect(self.configure_font)
