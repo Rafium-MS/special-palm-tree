@@ -8,7 +8,8 @@ from PyQt5.QtWidgets import QApplication, QMessageBox, QSplashScreen
 from config import settings
 from shared.i18n import t
 from shared.logging import get_logger
-from shared.utils import ensure_dir, load_config
+from shared.fs_utils import ensure_dir
+from shared.utils import load_config
 from ui.editor import EditorWindow
 from ui.theme import apply_theme
 
