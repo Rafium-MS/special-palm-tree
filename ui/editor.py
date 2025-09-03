@@ -57,6 +57,7 @@ from PyQt5.QtWidgets import (
     QListWidgetItem,
     QFontDialog,
     QProgressBar,
+    QTabWidget,
 )
 from PyQt5.QtPrintSupport import QPrinter
 
@@ -621,6 +622,12 @@ class EditorWindow(QMainWindow):
 
         self.spell_checker = SpellChecker(language="pt")
         self.misspelled_words = set()
+        # Detect language among common options
+        self.lang_detectors = {
+            code: SpellChecker(language=code)
+            for code in ["en", "es", "fr", "de", "pt"]
+        }
+        self.current_language = "-"
         self._spell_timer = QTimer(self)
         self._spell_timer.setSingleShot(True)
         self._spell_timer.setInterval(500)
@@ -681,6 +688,7 @@ class EditorWindow(QMainWindow):
 
         self.toolbar = QToolBar("Ferramentas", self)
         self.toolbar.setMovable(False)
+        self.toolbar.setToolButtonStyle(Qt.ToolButtonIconOnly)
         self.addToolBar(Qt.TopToolBarArea, self.toolbar)
         self._build_actions()
         menu_tools = self.menuBar().addMenu("Ferramentas")
@@ -725,9 +733,6 @@ class EditorWindow(QMainWindow):
         self.fav_view.setModel(self.fav_model)
         self.fav_view.setHeaderHidden(True)
         self.fav_view.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.fav_view.setFixedHeight(120)
-
-        fav_label = QLabel("Favoritos", self)
 
         tag_label = QLabel("Tags", self)
         self.tag_filter_input = QLineEdit(self)
@@ -739,18 +744,36 @@ class EditorWindow(QMainWindow):
         btn_clear_tags = QPushButton("Limpar filtro", self)
         btn_clear_tags.clicked.connect(lambda: self.filter_tree_by_tag(""))
 
-        tree_container = QWidget(self)
-        self.tree_container = tree_container
-        tree_layout = QVBoxLayout(tree_container)
-        tree_layout.setContentsMargins(0, 0, 0, 0)
-        tree_layout.setSpacing(0)
-        tree_layout.addWidget(tag_label)
-        tree_layout.addWidget(self.tag_filter_input)
-        tree_layout.addWidget(self.tag_list)
-        tree_layout.addWidget(btn_clear_tags)
-        tree_layout.addWidget(fav_label)
-        tree_layout.addWidget(self.fav_view)
-        tree_layout.addWidget(self.tree, 1)
+        # ---- Lateral tabs ----
+        structure_tab = QWidget(self)
+        structure_layout = QVBoxLayout(structure_tab)
+        structure_layout.setContentsMargins(0, 0, 0, 0)
+        structure_layout.setSpacing(0)
+        structure_layout.addWidget(tag_label)
+        structure_layout.addWidget(self.tag_filter_input)
+        structure_layout.addWidget(self.tag_list)
+        structure_layout.addWidget(btn_clear_tags)
+        structure_layout.addWidget(self.tree, 1)
+
+        ref_tab = QWidget(self)
+        ref_layout = QVBoxLayout(ref_tab)
+        ref_layout.setContentsMargins(0, 0, 0, 0)
+        ref_layout.setSpacing(0)
+        ref_layout.addWidget(QLabel("Favoritos", self))
+        ref_layout.addWidget(self.fav_view, 1)
+
+        ver_tab = QWidget(self)
+        ver_layout = QVBoxLayout(ver_tab)
+        ver_layout.setContentsMargins(0, 0, 0, 0)
+        ver_layout.setSpacing(0)
+        self.version_list = QListWidget(self)
+        self.version_list.itemDoubleClicked.connect(lambda item: self.restore_snapshot(item.data(Qt.UserRole)))
+        ver_layout.addWidget(self.version_list, 1)
+
+        self.sidebar = QTabWidget(self)
+        self.sidebar.addTab(structure_tab, "Estrutura")
+        self.sidebar.addTab(ref_tab, "Referências")
+        self.sidebar.addTab(ver_tab, "Versões")
 
         self.editor = SpellPlainTextEdit(self)
         self.editor.setPlaceholderText("Escreva aqui…")
@@ -784,7 +807,7 @@ class EditorWindow(QMainWindow):
         editor_splitter.addWidget(self.notes)
         editor_splitter.setStretchFactor(0, 1)
 
-        tree_splitter.addWidget(tree_container)
+        tree_splitter.addWidget(self.sidebar)
         tree_splitter.addWidget(editor_splitter)
         tree_splitter.setStretchFactor(1, 1)
 
@@ -793,12 +816,15 @@ class EditorWindow(QMainWindow):
         self._update_preview()
         self._refresh_tags_view()
         self._refresh_favorites_view()
+        self._refresh_versions_panel()
 
         sb = QStatusBar(self)
         self.lbl_path = QLabel("Pasta: " + str(self.workspace))
-        self.lbl_stats = QLabel("0 palavras • 0 caracteres • 0 min")
+        self.lbl_stats = QLabel("0 palavras • 0 caracteres")
+        self.lbl_lang = QLabel("Idioma: -", self)
         self.lbl_save_state = QLabel("Salvo", self)
         sb.addWidget(self.lbl_path, 1)
+        sb.addPermanentWidget(self.lbl_lang)
         sb.addPermanentWidget(self.lbl_save_state)
         sb.addPermanentWidget(self.lbl_stats)
         self.progress = QProgressBar(self)
@@ -812,7 +838,8 @@ class EditorWindow(QMainWindow):
         self.setCentralWidget(central)
 
     def _update_stats(self):
-        stats = compute_stats(self.editor.toPlainText())
+        text = self.editor.toPlainText()
+        stats = compute_stats(text)
         self.current_stats = stats
 
         # Daily word tracking
@@ -827,12 +854,11 @@ class EditorWindow(QMainWindow):
         self.last_word_count = stats["words"]
 
         if hasattr(self, "lbl_stats"):
-            rt = f"{stats['reading_time']:.1f} min"
-            label = f"{stats['words']} palavras • {stats['characters']} caracteres • {rt}"
-            if stats["top_words"]:
-                top = ", ".join(w for w, _ in stats["top_words"][:3])
-                label += f" • {top}"
+            label = f"{stats['words']} palavras • {stats['characters']} caracteres"
             self.lbl_stats.setText(label)
+        if hasattr(self, "lbl_lang"):
+            self.current_language = self._detect_language(text)
+            self.lbl_lang.setText(f"Idioma: {self.current_language}")
 
         if hasattr(self, "progress"):
             if self.daily_word_goal:
@@ -977,32 +1003,32 @@ class EditorWindow(QMainWindow):
         style = self.style()
         # Pasta de trabalho
         self.act_choose_workspace = QAction(style.standardIcon(QStyle.SP_DirIcon), "Selecionar Pasta", self)
-        self.act_open_in_explorer = QAction("Abrir no Explorer/Finder", self)
+        self.act_open_in_explorer = QAction(style.standardIcon(QStyle.SP_DialogOpenButton), "Abrir no Explorer/Finder", self)
 
         # Arquivos
-        self.act_new_file = QAction(style.standardIcon(QStyle.SP_FileIcon), "Novo Arquivo (Ctrl+N)", self)
-        self.act_open_file = QAction(style.standardIcon(QStyle.SP_DialogOpenButton), "Abrir Arquivo (Ctrl+O)", self)
-        self.act_save = QAction(style.standardIcon(QStyle.SP_DialogSaveButton), "Salvar (Ctrl+S)", self)
-        self.act_save_as = QAction("Salvar Como… (Ctrl+Shift+S)", self)
-        self.act_export = QAction("Exportar…", self)
-        self.act_export_project = QAction("Exportar Projeto (ZIP)", self)
-        self.act_import_batch = QAction("Importar em Lote…", self)
-        self.act_rename = QAction("Renomear…", self)
-        self.act_delete = QAction("Excluir…", self)
+        self.act_new_file = QAction(style.standardIcon(QStyle.SP_FileIcon), "Novo Arquivo", self)
+        self.act_open_file = QAction(style.standardIcon(QStyle.SP_DialogOpenButton), "Abrir Arquivo", self)
+        self.act_save = QAction(style.standardIcon(QStyle.SP_DialogSaveButton), "Salvar", self)
+        self.act_save_as = QAction("Salvar Como…", self)
+        self.act_export = QAction(style.standardIcon(QStyle.SP_DialogSaveButton), "Exportar…", self)
+        self.act_export_project = QAction(style.standardIcon(QStyle.SP_DriveHDIcon), "Exportar Projeto (ZIP)", self)
+        self.act_import_batch = QAction(style.standardIcon(QStyle.SP_DialogOpenButton), "Importar em Lote…", self)
+        self.act_rename = QAction(style.standardIcon(QStyle.SP_FileDialogNewFolder), "Renomear…", self)
+        self.act_delete = QAction(style.standardIcon(QStyle.SP_TrashIcon), "Excluir…", self)
 
         # Busca e tema
-        self.act_find = QAction("Buscar (Ctrl+F)", self)
-        self.act_global_find = QAction("Buscar no Workspace (Ctrl+Shift+F)", self)
-        self.act_command_palette = QAction("Paleta de Comandos (Ctrl+P)", self)
-        self.act_toggle_theme = QAction("Alternar Tema", self)
-        self.act_show_stats = QAction("Estatísticas…", self)
-        self.act_start_pomodoro = QAction(style.standardIcon(QStyle.SP_MediaPlay), "Pomodoro (Ctrl+Alt+P)", self)
+        self.act_find = QAction(style.standardIcon(QStyle.SP_FileDialogContentsView), "Buscar", self)
+        self.act_global_find = QAction(style.standardIcon(QStyle.SP_FileDialogDetailedView), "Buscar no Workspace", self)
+        self.act_command_palette = QAction(style.standardIcon(QStyle.SP_DesktopIcon), "Paleta de Comandos", self)
+        self.act_toggle_theme = QAction(style.standardIcon(QStyle.SP_BrowserReload), "Alternar Tema", self)
+        self.act_show_stats = QAction(style.standardIcon(QStyle.SP_MessageBoxInformation), "Estatísticas…", self)
+        self.act_start_pomodoro = QAction(style.standardIcon(QStyle.SP_MediaPlay), "Pomodoro", self)
 
         # Interface
-        self.act_toggle_sidebar = QAction("Alternar Barra Lateral", self)
+        self.act_toggle_sidebar = QAction(style.standardIcon(QStyle.SP_FileDialogListView), "Alternar Barra Lateral", self)
         self.act_toggle_sidebar.setCheckable(True)
         self.act_toggle_sidebar.setChecked(True)
-        self.act_focus_mode = QAction("Modo Foco", self)
+        self.act_focus_mode = QAction(style.standardIcon(QStyle.SP_TitleBarMaxButton), "Modo Foco", self)
         self.act_focus_mode.setCheckable(True)
         self.act_focus_mode.setShortcut(QKeySequence("F11"))
         self.act_set_font = QAction("Configurar Fonte e Espaçamento…", self)
@@ -1016,7 +1042,7 @@ class EditorWindow(QMainWindow):
         self.act_open_cidades_planetas = QAction("Construtor de Cidades/Planetas…", self)
 
         # Sair
-        self.act_close_tab = QAction("Fechar Arquivo (Ctrl+W)", self)
+        self.act_close_tab = QAction("Fechar Arquivo", self)
 
         # Atalhos
         self.act_new_file.setShortcut(QKeySequence.New)
@@ -1053,6 +1079,7 @@ class EditorWindow(QMainWindow):
         self.toolbar.addAction(self.act_show_stats)
 
         self._apply_shortcuts()
+        self._update_action_tooltips()
 
     def _apply_shortcuts(self):
         mapping = {
@@ -1073,6 +1100,26 @@ class EditorWindow(QMainWindow):
             act = mapping.get(name)
             if act:
                 act.setShortcut(QKeySequence(seq))
+
+    def _update_action_tooltips(self):
+        for act in self.toolbar.actions():
+            name = act.text()
+            seq = act.shortcut().toString(QKeySequence.NativeText)
+            act.setToolTip(f"{name} ({seq})" if seq else name)
+
+    def _detect_language(self, text: str) -> str:
+        words = re.findall(r"\b\w+\b", text.lower())
+        if not words:
+            return "-"
+        sample = words[:100]
+        best_lang = "-"
+        best_unknown = None
+        for code, checker in self.lang_detectors.items():
+            unknown = len(checker.unknown(sample))
+            if best_unknown is None or unknown < best_unknown:
+                best_unknown = unknown
+                best_lang = code
+        return best_lang
 
     def _connect_signals(self):
         self.editor.textChanged.connect(self._on_text_changed)
@@ -1195,8 +1242,8 @@ class EditorWindow(QMainWindow):
 
     def toggle_sidebar(self, checked=None):
         if checked is None:
-            checked = not self.tree_container.isVisible()
-        self.tree_container.setVisible(checked)
+            checked = not self.sidebar.isVisible()
+        self.sidebar.setVisible(checked)
         self.act_toggle_sidebar.setChecked(checked)
 
     def toggle_focus_mode(self, checked=None):
@@ -1204,18 +1251,18 @@ class EditorWindow(QMainWindow):
             checked = not self.focus_mode
         self.focus_mode = checked
         if checked:
-            self._sidebar_was_visible = self.tree_container.isVisible()
+            self._sidebar_was_visible = self.sidebar.isVisible()
             self.toolbar.setVisible(False)
             self.menuBar().setVisible(False)
-            self.tree_container.setVisible(False)
+            self.sidebar.setVisible(False)
             self.showFullScreen()
         else:
             self.toolbar.setVisible(True)
             self.menuBar().setVisible(True)
-            self.tree_container.setVisible(getattr(self, '_sidebar_was_visible', True))
+            self.sidebar.setVisible(getattr(self, '_sidebar_was_visible', True))
             self.showNormal()
         self.act_focus_mode.setChecked(checked)
-        self.act_toggle_sidebar.setChecked(self.tree_container.isVisible())
+        self.act_toggle_sidebar.setChecked(self.sidebar.isVisible())
 
     # Favoritos -----------------------------------------------------------
     def _refresh_favorites_view(self):
@@ -1250,6 +1297,32 @@ class EditorWindow(QMainWindow):
         cfg = load_config()
         cfg["favorites"] = list(self.favorites)
         save_config(cfg)
+
+    # Versões ------------------------------------------------------------
+    def _refresh_versions_panel(self):
+        if not hasattr(self, "version_list"):
+            return
+        self.version_list.clear()
+        if not self.current_file:
+            return
+        history_dir = self.workspace / HISTORY_DIRNAME / self.current_file.name
+        meta_file = history_dir / "meta.json"
+        if not meta_file.exists():
+            return
+        try:
+            data = json.loads(meta_file.read_text(encoding="utf-8"))
+        except Exception:
+            return
+        for entry in reversed(data):
+            ts = entry.get("timestamp")
+            size = entry.get("size", 0)
+            try:
+                dt = datetime.strptime(ts, "%Y%m%d%H%M%S").strftime("%Y-%m-%d %H:%M:%S")
+            except Exception:
+                dt = ts
+            item = QListWidgetItem(f"{dt} ({size} bytes)")
+            item.setData(Qt.UserRole, ts)
+            self.version_list.addItem(item)
 
     # Tags ---------------------------------------------------------------
     def _refresh_tags_view(self):
@@ -1671,6 +1744,7 @@ class EditorWindow(QMainWindow):
         self._set_dirty(False)
         self.autosave_timer.stop()
         self.setWindowTitle(title)
+        self._refresh_versions_panel()
 
     def maybe_save_changes(self) -> bool:
         if not self.dirty:
@@ -1711,6 +1785,7 @@ class EditorWindow(QMainWindow):
             meta_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
         except Exception:
             pass
+        self._refresh_versions_panel()
 
     def autosave(self):
         if self.autosave_enabled and self.dirty and self.current_file:
