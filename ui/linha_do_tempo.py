@@ -13,7 +13,6 @@ from dataclasses import dataclass, field, asdict
 from typing import Dict, List, Optional
 import json
 import sys
-import uuid
 
 from PyQt5.QtCore import Qt, QSize
 from PyQt5.QtWidgets import (
@@ -36,20 +35,7 @@ class Era:
     descricao: str = ""
     cor: str = ""  # placeholder (não utilizado no wireframe)
 
-@dataclass
-class Evento:
-    titulo: str
-    instante: int
-    id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    tipo: str = "Geral"  # Guerra, Descoberta, Política, Natural, Cultural, etc.
-    importancia: int = 3  # 1..5
-    escopo: str = "local"  # local/personagem/mundo
-    descricao: str = ""
-    era: str = ""  # nome da era a que pertence (opcional)
-    tags: List[str] = field(default_factory=list)
-    depende_de: List[str] = field(default_factory=list)  # lista de títulos
-    personagens: List[str] = field(default_factory=list)  # IDs de personagens
-    lugares: List[str] = field(default_factory=list)  # IDs de lugares
+from core.timeline.service import Evento, TimelineService, timeline_service
 
 @dataclass
 class Timeline:
@@ -203,6 +189,10 @@ class PageEventos(QWidget):
         super().__init__()
         self.tl = tl
         self.on_change = on_change
+        self.service = timeline_service
+        # sincroniza serviço com eventos do timeline atual
+        self.service.eventos = self.tl.eventos
+
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel("<h2>Eventos</h2>"))
         self.tbl = QTableWidget(0, 9)
@@ -237,7 +227,8 @@ class PageEventos(QWidget):
 
     def _load(self):
         self.tbl.setRowCount(0)
-        for ev in sorted(self.tl.eventos, key=lambda x: (x.instante, x.titulo)):
+        self.service.sort_events()
+        for ev in self.service.eventos:
             r = self.tbl.rowCount(); self.tbl.insertRow(r)
             self.tbl.setItem(r, 0, QTableWidgetItem(ev.titulo))
             self.tbl.setItem(r, 1, QTableWidgetItem(str(ev.instante)))
@@ -279,7 +270,7 @@ class PageEventos(QWidget):
         )
 
     def save(self):
-        eventos = []
+        self.service.eventos.clear()
         eras_nomes = {e.nome for e in self.tl.eras}
         for r in range(self.tbl.rowCount()):
             try:
@@ -312,7 +303,7 @@ class PageEventos(QWidget):
                         raise ValueError(
                             f"Personagem '{pid}' aparece antes de nascer"
                         )
-                eventos.append(
+                self.service.add_event(
                     Evento(
                         titulo=titulo,
                         instante=instante,
@@ -328,7 +319,16 @@ class PageEventos(QWidget):
             except Exception as err:
                 QMessageBox.critical(self, "Erro", f"Linha {r+1}: {err}")
                 return
-        self.tl.eventos = eventos
+        conflicts = self.service.resolve_conflicts()
+        if conflicts:
+            QMessageBox.critical(
+                self,
+                "Erro",
+                f"IDs de eventos com datas conflitantes: {', '.join(conflicts)}",
+            )
+            return
+        # sincroniza lista do timeline
+        self.tl.eventos = self.service.eventos
         self.on_change()
 
 class PageDependencias(QWidget):
@@ -705,6 +705,7 @@ class MainWindow(QMainWindow):
         self._montar_paginas(t)
 
     def _montar_paginas(self, t: Timeline):
+        timeline_service.eventos = t.eventos
         while self.stack.count() > 1:
             w = self.stack.widget(1)
             self.stack.removeWidget(w)
