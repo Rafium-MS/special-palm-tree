@@ -77,6 +77,7 @@ from shared.utils import (
     read_file_text,
     search_workspace,
 )
+from core.io import export_text, export_project_zip, import_batch
 from .demografico_medieval import MainWindow as DemograficoWindow
 from .personagens import MainWindow as PersonagensWindow
 from .economico import MainWindow as EconomicoWindow
@@ -984,6 +985,8 @@ class EditorWindow(QMainWindow):
         self.act_save = QAction(style.standardIcon(QStyle.SP_DialogSaveButton), "Salvar (Ctrl+S)", self)
         self.act_save_as = QAction("Salvar Como… (Ctrl+Shift+S)", self)
         self.act_export = QAction("Exportar…", self)
+        self.act_export_project = QAction("Exportar Projeto (ZIP)", self)
+        self.act_import_batch = QAction("Importar em Lote…", self)
         self.act_rename = QAction("Renomear…", self)
         self.act_delete = QAction("Excluir…", self)
 
@@ -1035,6 +1038,8 @@ class EditorWindow(QMainWindow):
         self.toolbar.addAction(self.act_save)
         self.toolbar.addAction(self.act_save_as)
         self.toolbar.addAction(self.act_export)
+        self.toolbar.addAction(self.act_export_project)
+        self.toolbar.addAction(self.act_import_batch)
         self.toolbar.addSeparator()
         self.toolbar.addAction(self.act_find)
         self.toolbar.addAction(self.act_global_find)
@@ -1084,6 +1089,8 @@ class EditorWindow(QMainWindow):
         self.act_save.triggered.connect(self.save_file)
         self.act_save_as.triggered.connect(self.save_file_as)
         self.act_export.triggered.connect(self.export_document)
+        self.act_export_project.triggered.connect(self.export_workspace_zip)
+        self.act_import_batch.triggered.connect(self.import_batch_files)
         self.act_rename.triggered.connect(self.rename_current_file)
         self.act_delete.triggered.connect(self.delete_current_file)
         self.act_find.triggered.connect(self.toggle_find)
@@ -1363,36 +1370,14 @@ class EditorWindow(QMainWindow):
             self,
             "Exportar documento",
             str(self.workspace),
-            "TXT (*.txt);;Markdown (*.md);;HTML (*.html);;PDF (*.pdf)",
+            "TXT (*.txt);;Markdown (*.md);;HTML (*.html);;DOCX (*.docx);;PDF (*.pdf)",
         )
         if not path:
             return
         text = self.editor.toPlainText()
         ext = Path(path).suffix.lower()
         try:
-            if ext == ".txt":
-                Path(path).write_text(text, encoding="utf-8")
-            elif ext == ".md":
-                Path(path).write_text(text, encoding="utf-8")
-            elif ext in {".html", ".htm"}:
-                try:
-                    import markdown
-
-                    body = markdown.markdown(text)
-                except Exception:
-                    doc = QTextDocument()
-                    doc.setPlainText(text)
-                    body = doc.toHtml()
-                css = "body { font-family: 'Consolas', 'Courier New', monospace; padding: 1em; }"
-                html = (
-                    "<!DOCTYPE html><html><head><meta charset='utf-8'><style>"
-                    + css
-                    + "</style></head><body>"
-                    + body
-                    + "</body></html>"
-                )
-                Path(path).write_text(html, encoding="utf-8")
-            elif ext == ".pdf":
+            if ext == ".pdf":
                 doc = QTextDocument()
                 try:
                     import markdown
@@ -1405,11 +1390,42 @@ class EditorWindow(QMainWindow):
                 printer.setOutputFileName(path)
                 doc.print_(printer)
             else:
-                QMessageBox.warning(self, APP_NAME, "Formato de exportação desconhecido.")
-                return
+                meta = {
+                    "title": self.current_file.stem if self.current_file else "document",
+                    "date": datetime.now().isoformat(),
+                }
+                export_text(text, Path(path), meta)
             self.statusBar().showMessage("Documento exportado.", 2000)
         except Exception as e:
             QMessageBox.critical(self, APP_NAME, f"Erro ao exportar:\n{e}")
+
+    def export_workspace_zip(self):
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Exportar projeto",
+            str(self.workspace),
+            "ZIP (*.zip)",
+        )
+        if not path:
+            return
+        try:
+            export_project_zip(self.workspace, Path(path))
+            self.statusBar().showMessage("Projeto exportado.", 2000)
+        except Exception as e:
+            QMessageBox.critical(self, APP_NAME, f"Erro ao exportar:\n{e}")
+
+    def import_batch_files(self):
+        src = QFileDialog.getExistingDirectory(
+            self, "Importar textos", str(self.workspace)
+        )
+        if not src:
+            return
+        try:
+            import_batch(Path(src), self.workspace)
+            self.tree_model.load_project()
+            self.statusBar().showMessage("Arquivos importados.", 2000)
+        except Exception as e:
+            QMessageBox.critical(self, APP_NAME, f"Erro ao importar:\n{e}")
 
     def open_command_palette(self):
         actions = {
@@ -1417,6 +1433,8 @@ class EditorWindow(QMainWindow):
             "Abrir Arquivo": self.act_open_file,
             "Salvar": self.act_save,
             "Exportar": self.act_export,
+            "Exportar Projeto": self.act_export_project,
+            "Importar em Lote": self.act_import_batch,
             "Alternar Tema": self.act_toggle_theme,
             "Criar Personagem": self.act_open_personagens,
             "Novo Evento da Linha do Tempo": self.act_open_linha_tempo,

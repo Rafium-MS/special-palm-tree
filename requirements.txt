@@ -4,3 +4,5 @@ pydantic
 python-dotenv
 networkx
 matplotlib
+
+python-docx
