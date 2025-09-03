@@ -17,12 +17,33 @@ import sys
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QSplitter, QListWidget, QListWidgetItem,
-    QStackedWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel, QLineEdit,
-    QTextEdit, QComboBox, QPushButton, QSpinBox, QDoubleSpinBox, QGroupBox,
-    QTableWidget, QTableWidgetItem, QAbstractItemView, QFileDialog, QMessageBox,
-    QCheckBox
-, QInputDialog)
+    QApplication,
+    QMainWindow,
+    QWidget,
+    QSplitter,
+    QListWidget,
+    QListWidgetItem,
+    QTabWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QFormLayout,
+    QLabel,
+    QLineEdit,
+    QTextEdit,
+    QComboBox,
+    QPushButton,
+    QSpinBox,
+    QDoubleSpinBox,
+    QGroupBox,
+    QTableWidget,
+    QTableWidgetItem,
+    QAbstractItemView,
+    QFileDialog,
+    QMessageBox,
+    QCheckBox,
+    QInputDialog,
+)
+from core.timeline.service import timeline_service
 
 
 # ----------------------------- Estado -----------------------------
@@ -30,6 +51,7 @@ from PyQt5.QtWidgets import (
 class Personagem:
     nome: str = ""
     idade: int = 25
+    nascimento: int = 0  # ano de nascimento
     genero: str = ""
     especie: str = "Humano"
     origem: str = ""
@@ -109,6 +131,14 @@ TEMPLATES: Dict[str, Dict] = {
         "tags": ["#scifi", "#mercenario"],
         "personalidade": "Pragmático; lealdade ao melhor contrato.",
     },
+    "Oficial (Sci‑Fi)": {
+        "papel": "Oficial",
+        "atributos": {"Força": 5, "Agilidade": 5, "Intelecto": 4, "Carisma": 6, "Vontade": 6},
+        "pericias": [{"nome": "Comando", "nivel": "4"}, {"nome": "Tática", "nivel": "3"}],
+        "equipamentos": ["Uniforme", "Comunicator", "Arma lateral"],
+        "tags": ["#scifi", "#oficial"],
+        "personalidade": "Disciplinado e leal às ordens.",
+    },
 }
 
 # ----------------------------- Páginas -----------------------------
@@ -125,7 +155,7 @@ class PageBasico(QWidget):
         self.cb_genero = QComboBox(); self.cb_genero.addItems(["", "Feminino", "Masculino", "Não-binário", "Outro"]) ; self.cb_genero.setCurrentText(self.p.genero)
         self.ed_especie = QLineEdit(self.p.especie)
         self.ed_origem = QLineEdit(self.p.origem)
-        self.cb_papel = QComboBox(); self.cb_papel.addItems(["Protagonista", "Antagonista", "Coadjuvante"]) ; self.cb_papel.setCurrentText(self.p.papel)
+        self.cb_papel = QComboBox(); self.cb_papel.addItems(["Protagonista", "Antagonista", "Coadjuvante", "Oficial"]) ; self.cb_papel.setCurrentText(self.p.papel)
         self.ed_afiliacao = QLineEdit(self.p.afiliacao)
         form.addRow("Nome:", self.ed_nome)
         form.addRow("Idade:", self.sp_idade)
@@ -148,6 +178,9 @@ class PageBasico(QWidget):
         self.p.origem = self.ed_origem.text().strip()
         self.p.papel = self.cb_papel.currentText()
         self.p.afiliacao = self.ed_afiliacao.text().strip()
+        if self.p.papel == "Oficial" and not self.p.afiliacao:
+            QMessageBox.critical(self, "Erro", "Afiliação é obrigatória para papel 'Oficial'.")
+            return
         self.on_change()
 
 
@@ -335,6 +368,44 @@ class PageRelacoes(QWidget):
         self.on_change()
 
 
+class PageCronologia(QWidget):
+    def __init__(self, personagem: Personagem, on_change):
+        super().__init__()
+        self.p = personagem
+        self.on_change = on_change
+        layout = QVBoxLayout(self)
+        layout.addWidget(QLabel("<h2>Cronologia</h2>"))
+        form = QFormLayout()
+        self.sp_nasc = QSpinBox(); self.sp_nasc.setRange(-10000, 10000); self.sp_nasc.setValue(self.p.nascimento)
+        form.addRow("Ano de Nascimento:", self.sp_nasc)
+        layout.addLayout(form)
+        layout.addWidget(QLabel("Eventos com o personagem:"))
+        self.lst_eventos = QListWidget()
+        layout.addWidget(self.lst_eventos)
+        btn = QPushButton("Salvar Cronologia")
+        btn.clicked.connect(self.save)
+        layout.addWidget(btn)
+        layout.addStretch(1)
+        self._load_eventos()
+
+    def _load_eventos(self):
+        self.lst_eventos.clear()
+        for ev in timeline_service.eventos:
+            if self.p.nome in ev.personagens:
+                self.lst_eventos.addItem(f"{ev.instante}: {ev.titulo}")
+
+    def save(self):
+        ano = self.sp_nasc.value()
+        eventos = [ev for ev in timeline_service.eventos if self.p.nome in ev.personagens]
+        if eventos:
+            primeiro = min(ev.instante for ev in eventos)
+            if ano > primeiro:
+                QMessageBox.critical(self, "Erro", "Ano de nascimento é posterior a eventos associados.")
+                return
+        self.p.nascimento = ano
+        self.on_change()
+
+
 class PageEquip(QWidget):
     def __init__(self, personagem: Personagem, on_change):
         super().__init__()
@@ -346,7 +417,6 @@ class PageEquip(QWidget):
         # equipamentos e inventário (listas simples)
         self.ed_equip = QLineEdit(); self.ed_equip.setPlaceholderText("Adicionar equipamento e Enter…")
         self.ed_inv = QLineEdit(); self.ed_inv.setPlaceholderText("Adicionar item ao inventário e Enter…")
-        from PyQt5.QtWidgets import QListWidget
         self.lst_equip = QListWidget(); self.lst_inv = QListWidget()
 
         row = QHBoxLayout()
@@ -400,7 +470,6 @@ class PageArco(QWidget):
 
         # tags / notas
         self.ed_tag = QLineEdit(); self.ed_tag.setPlaceholderText("Adicionar tag e Enter… (ex.: #fantasia, #cyberpunk)")
-        from PyQt5.QtWidgets import QListWidget
         self.lst_tags = QListWidget()
         self.tx_notas = QTextEdit(self.p.notas)
 
@@ -483,16 +552,15 @@ class MainWindow(QMainWindow):
         vleft.addWidget(self.lst_chars, 1)
         vleft.addLayout(hl)
 
-        # --- direita: páginas do personagem selecionado ---
-        self.stack = QStackedWidget()
-        self.lbl_empty = QLabel("<i>Crie um personagem ou selecione um da lista…</i>")
-        self.lbl_empty.setAlignment(Qt.AlignCenter)
-        self.stack.addWidget(self.lbl_empty)
+        # --- direita: tabs do personagem selecionado ---
+        self.tabs = QTabWidget()
 
         splitter.addWidget(left)
-        splitter.addWidget(self.stack)
+        splitter.addWidget(self.tabs)
         splitter.setStretchFactor(1, 1)
         self.setCentralWidget(splitter)
+
+        self._set_placeholder()
 
         # conexões da esquerda
         self.btn_novo.clicked.connect(self._novo_personagem)
@@ -537,6 +605,7 @@ class MainWindow(QMainWindow):
         p = Personagem(nome=sel)
         # aplicar campos do template
         p.papel = base.get("papel", p.papel)
+        p.nascimento = base.get("nascimento", p.nascimento)
         p.personalidade = base.get("personalidade", p.personalidade)
         if "atributos" in base:
             for k, v in base["atributos"].items():
@@ -564,7 +633,7 @@ class MainWindow(QMainWindow):
         if i < 0: return
         del self.personagens[i]
         self._refresh_lista()
-        self.stack.setCurrentIndex(0)
+        self._set_placeholder()
 
     def _refresh_lista(self):
         filtro = self.ed_filtro.text().strip().lower()
@@ -578,9 +647,16 @@ class MainWindow(QMainWindow):
     def _aplicar_filtro(self, _):
         self._refresh_lista()
 
+    def _set_placeholder(self):
+        self.idx_atual = -1
+        self.tabs.clear()
+        lbl = QLabel("<i>Crie um personagem ou selecione um da lista…</i>")
+        lbl.setAlignment(Qt.AlignCenter)
+        self.tabs.addTab(lbl, "Início")
+
     def _trocar_personagem(self, idx):
         if idx < 0 or idx >= len(self.personagens):
-            self.stack.setCurrentIndex(0)
+            self._set_placeholder()
             return
         self.idx_atual = idx
         p = self.personagens[idx]
@@ -594,23 +670,41 @@ class MainWindow(QMainWindow):
         self._refresh_lista()
 
     def _montar_paginas(self, p: Personagem):
-        # limpar páginas antigas (mantém o placeholder na posição 0)
-        while self.stack.count() > 1:
-            w = self.stack.widget(1)
-            self.stack.removeWidget(w)
-            w.deleteLater()
-        # recriar páginas do personagem
+        self.tabs.clear()
         self.page_basico = PageBasico(p, self._on_change)
         self.page_pers = PagePersonalidade(p, self._on_change)
         self.page_atr = PageAtributos(p, self._on_change)
         self.page_rel = PageRelacoes(p, self._on_change)
         self.page_equip = PageEquip(p, self._on_change)
         self.page_arco = PageArco(p, self._on_change)
+        self.page_cron = PageCronologia(p, self._on_change)
         self.page_resumo = PageResumo(p)
-        for w in [self.page_basico, self.page_pers, self.page_atr, self.page_rel, self.page_equip, self.page_arco, self.page_resumo]:
-            wrap = QWidget(); v = QVBoxLayout(wrap); v.setContentsMargins(16,16,16,16); v.addWidget(w)
-            self.stack.addWidget(wrap)
-        self.stack.setCurrentIndex(1)
+
+        def wrap(w):
+            cont = QWidget()
+            v = QVBoxLayout(cont)
+            v.setContentsMargins(16, 16, 16, 16)
+            v.addWidget(w)
+            return cont
+
+        self.tabs.addTab(wrap(self.page_basico), "Bio")
+
+        tracos = QTabWidget()
+        tracos.addTab(wrap(self.page_pers), "Personalidade")
+        tracos.addTab(wrap(self.page_atr), "Atributos")
+        tracos.addTab(wrap(self.page_equip), "Itens")
+        tracos.addTab(wrap(self.page_arco), "Arco")
+        self.tabs.addTab(tracos, "Traços")
+
+        self.tabs.addTab(wrap(self.page_rel), "Relações")
+
+        cron_wrap = QWidget()
+        v = QVBoxLayout(cron_wrap)
+        v.setContentsMargins(16, 16, 16, 16)
+        v.addWidget(self.page_cron)
+        v.addWidget(self.page_resumo)
+        self.tabs.addTab(cron_wrap, "Cronologia")
+        self.tabs.setCurrentIndex(0)
 
     # --- Export/Import ---
     def _exportar_personagem(self):
