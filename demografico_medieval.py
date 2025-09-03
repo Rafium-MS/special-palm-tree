@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Wireframe – Construtor Demográfico Medieval (PyQt5)
+Construtor Demográfico Medieval (PyQt5)
 
 Objetivo: fornecer uma interface navegável (protótipo) para o módulo,
 com páginas/telas e campos principais. A lógica de simulação aqui é mínima
@@ -470,7 +470,7 @@ class PaginaResultados(QWidget):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Construtor Demográfico Medieval – Wireframe")
+        self.setWindowTitle("Construtor Demográfico Medieval")
         self.resize(1200, 720)
 
         # estado compartilhado

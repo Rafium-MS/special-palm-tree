@@ -77,6 +77,8 @@ from utils import (
     search_workspace,
 )
 from demografico_medieval import MainWindow as DemograficoWindow
+from personagens import MainWindow as PersonagensWindow
+
 class FavoriteFileSystemModel(QFileSystemModel):
     """File system model that highlights favorite paths."""
 
@@ -661,6 +663,7 @@ class EditorWindow(QMainWindow):
         menu_tools.addAction(self.act_set_daily_goal)
         menu_tools.addSeparator()
         menu_tools.addAction(self.act_open_demografico)
+        menu_tools.addAction(self.act_open_personagens)
         self.menu_history = self.menuBar().addMenu("Histórico de versões")
         self.menu_history.aboutToShow.connect(self._populate_history_menu)
 
@@ -838,6 +841,12 @@ class EditorWindow(QMainWindow):
         self.demografico_window.show()
         self.demografico_window.raise_()
         self.demografico_window.activateWindow()
+    def open_personagens(self):
+        if not hasattr(self, "personagens_window"):
+            self.personagens_window = PersonagensWindow()
+        self.personagens_window.show()
+        self.personagens_window.raise_()
+        self.personagens_window.activateWindow()
 
     def check_spelling(self):
         text = self.editor.toPlainText()
@@ -921,6 +930,7 @@ class EditorWindow(QMainWindow):
         self.act_autosave_settings = QAction("Configurar Autosave…", self)
         self.act_set_daily_goal = QAction("Definir Meta Diária…", self)
         self.act_open_demografico = QAction("Construtor Demográfico Medieval…", self)
+        self.act_open_personagens = QAction("Gerenciador de Personagens…", self)
 
         # Sair
         self.act_close_tab = QAction("Fechar Arquivo (Ctrl+W)", self)
@@ -1001,6 +1011,7 @@ class EditorWindow(QMainWindow):
         self.act_autosave_settings.triggered.connect(self.configure_autosave)
         self.act_set_daily_goal.triggered.connect(self.configure_daily_goal)
         self.act_open_demografico.triggered.connect(self.open_demografico_medieval)
+        self.act_open_personagens.triggered.connect(self.open_personagens)
 
         self.find_bar.btn_close.clicked.connect(lambda: self.find_bar.setVisible(False))
         self.find_bar.btn_next.clicked.connect(lambda: self.find_next(True))
