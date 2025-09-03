@@ -223,6 +223,10 @@ class _TableEdit(QWidget):
             out.append(item)
         return out
 
+    def refresh(self):
+        """Recarrega os dados atuais na tabela."""
+        self._load()
+
 class PageRecursosProducao(QWidget):
     def __init__(self, eco: Economia, on_change):
         super().__init__()
@@ -251,6 +255,13 @@ class PageRecursosProducao(QWidget):
         self.e.recursos = self.tab_rec.to_list()
         self.e.producao = self.tab_prod.to_list()
         self.on_change()
+
+    def refresh(self):
+        """Atualiza as tabelas com os dados atuais da economia."""
+        self.tab_rec.rows = self.e.recursos
+        self.tab_rec.refresh()
+        self.tab_prod.rows = self.e.producao
+        self.tab_prod.refresh()
 
 class PageRotas(QWidget):
     def __init__(self, eco: Economia, on_change):
@@ -436,6 +447,8 @@ class MainWindow(QMainWindow):
         act_exp.triggered.connect(self._exportar)
         act_imp = m.addAction("Importar economia (JSON)")
         act_imp.triggered.connect(self._importar)
+        act_imp_rec = m.addAction("Importar recursos de localidade")
+        act_imp_rec.triggered.connect(self._importar_recursos)
         m.addSeparator()
         act_all = m.addAction("Exportar todas (JSON)")
         act_all.triggered.connect(self._exportar_todas)
@@ -536,6 +549,34 @@ class MainWindow(QMainWindow):
             e = Economia(**data)
             self.economias.append(e)
             self._refresh_lista()
+        except Exception as err:
+            QMessageBox.critical(self, "Erro", f"Falha ao importar: {err}")
+
+    def _importar_recursos(self):
+        i = self.idx_atual
+        if i < 0:
+            return
+        path, _ = QFileDialog.getOpenFileName(self, "Importar Localidade", "", "JSON (*.json)")
+        if not path:
+            return
+        try:
+            data = json.loads(open(path, 'r', encoding='utf-8').read())
+            recursos = data.get("recursos", [])
+            if isinstance(recursos, list):
+                econ = self.economias[i]
+                existentes = {r.get("recurso") for r in econ.recursos}
+                for r in recursos:
+                    nome = r.get("recurso", "")
+                    if nome in existentes:
+                        continue
+                    econ.recursos.append({
+                        "recurso": nome,
+                        "abundancia": r.get("abundancia", ""),
+                        "notas": r.get("notas", ""),
+                    })
+                if hasattr(self, "page_rec"):
+                    self.page_rec.refresh()
+                self._on_change()
         except Exception as err:
             QMessageBox.critical(self, "Erro", f"Falha ao importar: {err}")
 
