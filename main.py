@@ -71,6 +71,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtPrintSupport import QPrinter
 
 from spellchecker import SpellChecker
+from collections import Counter
 
 APP_NAME = "Editor de Textos"
 DEFAULT_WORKSPACE = Path.cwd() / "workspace"
@@ -79,11 +80,20 @@ AUTOSAVE_DIRNAME = ".autosave"
 SUPPORTED_TEXT_EXTS = {".txt", ".md", ".markdown", ".json", ".yaml", ".yml", ".ini", ".cfg", ".csv"}
 
 
-def human_count(text: str):
-    # Conta palavras e caracteres de forma simples (separado por whitespace)
-    words = len([w for w in text.split() if w.strip()])
-    chars = len(text)
-    return words, chars
+def compute_stats(text: str, wpm: int = 200, top_n: int = 5):
+    """Compute word/character counts, reading time and top words."""
+    words_list = re.findall(r"\b\w+\b", text.lower())
+    word_count = len(words_list)
+    char_count = len(text)
+    reading_time = word_count / float(wpm) if wpm else 0
+    freq = Counter(words_list)
+    top_words = freq.most_common(top_n)
+    return {
+        "words": word_count,
+        "characters": char_count,
+        "reading_time": reading_time,
+        "top_words": top_words,
+    }
 
 
 def ensure_dir(p: Path):
@@ -333,6 +343,8 @@ class EditorWindow(QMainWindow):
         self.toolbar.setMovable(False)
         self.addToolBar(Qt.TopToolBarArea, self.toolbar)
         self._build_actions()
+        menu_tools = self.menuBar().addMenu("Ferramentas")
+        menu_tools.addAction(self.act_show_stats)
 
         self.find_bar = FindBar(self)
         root.addWidget(self.find_bar)
@@ -384,7 +396,7 @@ class EditorWindow(QMainWindow):
 
         sb = QStatusBar(self)
         self.lbl_path = QLabel("Pasta: " + str(self.workspace))
-        self.lbl_stats = QLabel("0 palavras • 0 caracteres")
+        self.lbl_stats = QLabel("0 palavras • 0 caracteres • 0 min")
         sb.addWidget(self.lbl_path, 1)
         sb.addPermanentWidget(self.lbl_stats)
         self.setStatusBar(sb)
@@ -392,9 +404,15 @@ class EditorWindow(QMainWindow):
         self.setCentralWidget(central)
 
     def _update_stats(self):
-        words, chars = human_count(self.editor.toPlainText())
-        if hasattr(self, 'lbl_stats'):
-            self.lbl_stats.setText(f"{words} palavras • {chars} caracteres")
+        stats = compute_stats(self.editor.toPlainText())
+        self.current_stats = stats
+        if hasattr(self, "lbl_stats"):
+            rt = f"{stats['reading_time']:.1f} min"
+            label = f"{stats['words']} palavras • {stats['characters']} caracteres • {rt}"
+            if stats["top_words"]:
+                top = ", ".join(w for w, _ in stats["top_words"][:3])
+                label += f" • {top}"
+            self.lbl_stats.setText(label)
 
     def _update_preview(self):
         text = self.editor.toPlainText()
@@ -406,6 +424,21 @@ class EditorWindow(QMainWindow):
             doc.setPlainText(text)
             html = doc.toHtml()
         self.preview.setHtml(html)
+
+    def show_stats_dialog(self):
+        stats = getattr(self, "current_stats", None)
+        if not stats:
+            stats = compute_stats(self.editor.toPlainText())
+        top = "\n".join(f"{w}: {c}" for w, c in stats["top_words"])
+        rt = f"{stats['reading_time']:.1f} min"
+        msg = (
+            f"Palavras: {stats['words']}\n"
+            f"Caracteres: {stats['characters']}\n"
+            f"Tempo de leitura: {rt}"
+        )
+        if top:
+            msg += "\nPalavras-chave:\n" + top
+        QMessageBox.information(self, "Estatísticas", msg)
 
     def check_spelling(self):
         text = self.editor.toPlainText()
@@ -474,6 +507,7 @@ class EditorWindow(QMainWindow):
         # Busca e tema
         self.act_find = QAction("Buscar (Ctrl+F)", self)
         self.act_toggle_theme = QAction("Alternar Tema Claro/Escuro", self)
+        self.act_show_stats = QAction("Estatísticas…", self)
 
         # Sair
         self.act_close_tab = QAction("Fechar Arquivo (Ctrl+W)", self)
@@ -497,6 +531,7 @@ class EditorWindow(QMainWindow):
         self.toolbar.addAction(self.act_toggle_theme)
         self.toolbar.addSeparator()
         self.toolbar.addAction(self.act_open_in_explorer)
+        self.toolbar.addAction(self.act_show_stats)
 
     def _connect_signals(self):
         self.editor.textChanged.connect(self._on_text_changed)
@@ -515,6 +550,7 @@ class EditorWindow(QMainWindow):
         self.act_find.triggered.connect(self.toggle_find)
         self.act_toggle_theme.triggered.connect(self.toggle_theme)
         self.act_close_tab.triggered.connect(self.close_current_file)
+        self.act_show_stats.triggered.connect(self.show_stats_dialog)
 
         self.find_bar.btn_close.clicked.connect(lambda: self.find_bar.setVisible(False))
         self.find_bar.btn_next.clicked.connect(lambda: self.find_next(True))
@@ -712,8 +748,7 @@ class EditorWindow(QMainWindow):
     # Helpers -------------------------------------------------------------
     def _on_text_changed(self):
         self.dirty = True
-        words, chars = human_count(self.editor.toPlainText())
-        self.lbl_stats.setText(f"{words} palavras • {chars} caracteres")
+        self._update_stats()
         self._spell_timer.start()
 
     def _on_tree_double_clicked(self, index: QModelIndex):
