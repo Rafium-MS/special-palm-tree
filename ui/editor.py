@@ -638,16 +638,17 @@ class EditorWindow(QMainWindow):
 
         # Autosave
         self.autosave_enabled = True
-        self.autosave_interval = int(cfg.get("autosave_interval", 30_000))
+        self.autosave_interval = int(cfg.get("autosave_interval", 2000))
         autosave_dir = cfg.get("autosave_dir")
         self.autosave_dir = Path(autosave_dir) if autosave_dir else (self.workspace / AUTOSAVE_DIRNAME)
         ensure_dir(self.autosave_dir)
         self.autosave_timer = QTimer(self)
+        self.autosave_timer.setSingleShot(True)
         self.autosave_timer.setInterval(self.autosave_interval)
         self.autosave_timer.timeout.connect(self.autosave)
-        self.autosave_timer.start()
 
         self._build_ui()
+        self._set_dirty(False)
 
         # Apply saved font settings
         font_family = cfg.get("font_family")
@@ -789,7 +790,9 @@ class EditorWindow(QMainWindow):
         sb = QStatusBar(self)
         self.lbl_path = QLabel("Pasta: " + str(self.workspace))
         self.lbl_stats = QLabel("0 palavras • 0 caracteres • 0 min")
+        self.lbl_save_state = QLabel("Salvo", self)
         sb.addWidget(self.lbl_path, 1)
+        sb.addPermanentWidget(self.lbl_save_state)
         sb.addPermanentWidget(self.lbl_stats)
         self.progress = QProgressBar(self)
         self.progress.setMaximumWidth(150)
@@ -965,6 +968,7 @@ class EditorWindow(QMainWindow):
         # Busca e tema
         self.act_find = QAction("Buscar (Ctrl+F)", self)
         self.act_global_find = QAction("Buscar no Workspace (Ctrl+Shift+F)", self)
+        self.act_command_palette = QAction("Paleta de Comandos (Ctrl+P)", self)
         self.act_toggle_theme = QAction("Alternar Tema", self)
         self.act_show_stats = QAction("Estatísticas…", self)
         self.act_start_pomodoro = QAction(style.standardIcon(QStyle.SP_MediaPlay), "Pomodoro (Ctrl+Alt+P)", self)
@@ -996,6 +1000,7 @@ class EditorWindow(QMainWindow):
         self.act_save_as.setShortcut(QKeySequence.SaveAs)
         self.act_find.setShortcut(QKeySequence.Find)
         self.act_global_find.setShortcut(QKeySequence("Ctrl+Shift+F"))
+        self.act_command_palette.setShortcut(QKeySequence("Ctrl+P"))
         self.act_close_tab.setShortcut(QKeySequence.Close)
         self.act_toggle_sidebar.setShortcut(QKeySequence("F9"))
         self.act_start_pomodoro.setShortcut(QKeySequence("Ctrl+Alt+P"))
@@ -1011,6 +1016,7 @@ class EditorWindow(QMainWindow):
         self.toolbar.addSeparator()
         self.toolbar.addAction(self.act_find)
         self.toolbar.addAction(self.act_global_find)
+        self.toolbar.addAction(self.act_command_palette)
         self.toolbar.addAction(self.act_toggle_theme)
         self.toolbar.addAction(self.act_toggle_sidebar)
         self.toolbar.addAction(self.act_focus_mode)
@@ -1029,6 +1035,7 @@ class EditorWindow(QMainWindow):
             "save_as": self.act_save_as,
             "find": self.act_find,
             "global_find": self.act_global_find,
+            "command_palette": self.act_command_palette,
             "toggle_theme": self.act_toggle_theme,
             "close_file": self.act_close_tab,
             "toggle_sidebar": self.act_toggle_sidebar,
@@ -1059,6 +1066,7 @@ class EditorWindow(QMainWindow):
         self.act_delete.triggered.connect(self.delete_current_file)
         self.act_find.triggered.connect(self.toggle_find)
         self.act_global_find.triggered.connect(self.open_global_search)
+        self.act_command_palette.triggered.connect(self.open_command_palette)
         self.act_toggle_theme.triggered.connect(self.toggle_theme)
         self.act_close_tab.triggered.connect(self.close_current_file)
         self.act_show_stats.triggered.connect(self.show_stats_dialog)
@@ -1263,7 +1271,8 @@ class EditorWindow(QMainWindow):
             self.project_model.set_root_path(self.workspace)
             self.current_file = None
             self.editor.clear()
-            self.dirty = False
+            self._set_dirty(False)
+            self.autosave_timer.stop()
             cfg = load_config()
             cfg["workspace"] = str(self.workspace)
             save_config(cfg)
@@ -1315,7 +1324,7 @@ class EditorWindow(QMainWindow):
             text = self.editor.toPlainText()
             self.current_file.write_text(text, encoding="utf-8")
             self.save_snapshot()
-            self.dirty = False
+            self._set_dirty(False)
             self.statusBar().showMessage("Salvo.", 2000)
         except Exception as e:
             QMessageBox.critical(self, APP_NAME, f"Erro ao salvar:\n{e}")
@@ -1380,6 +1389,24 @@ class EditorWindow(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, APP_NAME, f"Erro ao exportar:\n{e}")
 
+    def open_command_palette(self):
+        actions = {
+            "Novo Arquivo": self.act_new_file,
+            "Abrir Arquivo": self.act_open_file,
+            "Salvar": self.act_save,
+            "Exportar": self.act_export,
+            "Alternar Tema": self.act_toggle_theme,
+            "Criar Personagem": self.act_open_personagens,
+            "Novo Evento da Linha do Tempo": self.act_open_linha_tempo,
+            "Abrir Construtor Demográfico": self.act_open_demografico,
+        }
+        items = sorted(actions.keys())
+        choice, ok = QInputDialog.getItem(
+            self, "Paleta de Comandos", "Ação:", items, 0, False
+        )
+        if ok and choice in actions:
+            actions[choice].trigger()
+
     def rename_current_file(self):
         if not self.current_file:
             QMessageBox.information(self, APP_NAME, "Nenhum arquivo aberto.")
@@ -1408,7 +1435,8 @@ class EditorWindow(QMainWindow):
                 self.current_file.unlink()
                 self.current_file = None
                 self.editor.clear()
-                self.dirty = False
+                self._set_dirty(False)
+                self.autosave_timer.stop()
                 self.statusBar().showMessage("Arquivo excluído.", 2000)
             except Exception as e:
                 QMessageBox.critical(self, APP_NAME, f"Erro ao excluir:\n{e}")
@@ -1452,12 +1480,19 @@ class EditorWindow(QMainWindow):
             return
         self.current_file = None
         self.editor.clear()
-        self.dirty = False
+        self._set_dirty(False)
+        self.autosave_timer.stop()
 
     # Helpers -------------------------------------------------------------
+    def _set_dirty(self, value: bool):
+        self.dirty = value
+        if hasattr(self, "lbl_save_state"):
+            self.lbl_save_state.setText("Alterado" if value else "Salvo")
+
     def _on_text_changed(self):
-        self.dirty = True
+        self._set_dirty(True)
         self._update_stats()
+        self.autosave_timer.start()
         self._spell_timer.start()
 
     def _on_tree_double_clicked(self, index: QModelIndex):
@@ -1593,7 +1628,8 @@ class EditorWindow(QMainWindow):
         self.editor.setPlainText(text)
         self.set_line_spacing(getattr(self, "line_spacing", 1.0))
         self.editor.setFocus()
-        self.dirty = False
+        self._set_dirty(False)
+        self.autosave_timer.stop()
         self.setWindowTitle(title)
 
     def maybe_save_changes(self) -> bool:
@@ -1637,15 +1673,8 @@ class EditorWindow(QMainWindow):
             pass
 
     def autosave(self):
-        if not self.autosave_enabled or not self.dirty or not self.current_file:
-            return
-        ensure_dir(self.autosave_dir)
-        backup_path = self.autosave_dir / f"{self.current_file.name}.bak"
-        try:
-            backup_path.write_text(self.editor.toPlainText(), encoding="utf-8")
-            self.statusBar().showMessage("Autosave concluído.", 1500)
-        except Exception:
-            self.statusBar().showMessage("Falha no autosave.", 1500)
+        if self.autosave_enabled and self.dirty and self.current_file:
+            self.save_file()
 
     def _populate_history_menu(self):
         self.menu_history.clear()
@@ -1687,7 +1716,7 @@ class EditorWindow(QMainWindow):
         except Exception:
             return
         self.editor.setPlainText(text)
-        self.dirty = True
+        self._set_dirty(True)
         self.statusBar().showMessage("Versão restaurada. Salve para manter.", 2000)
 
     # Eventos -------------------------------------------------------------
