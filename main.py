@@ -12,7 +12,7 @@ Recursos:
 - Novo arquivo / Nova pasta
 - Salvar, Salvar Como
 - Renomear, Excluir (com confirmação)
-- Autosave opcional a cada 30s (cria .autosave/<nome>.bak)
+ - Autosave configurável (intervalo e pasta de backups)
 - Contador de palavras e caracteres
 - Barra de busca (Ctrl+F) com próximo/anterior
 - Tema claro/escuro (toggle)
@@ -21,6 +21,8 @@ Recursos:
 - Barra lateral colapsável
 - Modo foco/tela cheia ocultando menus e árvore
 - Área de anotações na lateral
+- Configuração de fonte diretamente no app
+- Importação de arquivos externos (Word, ODT, RTF)
 
 Requisitos: PyQt5
 pip install PyQt5
@@ -85,6 +87,7 @@ from PyQt5.QtWidgets import (
     QListWidget,
     QDialog,
     QListWidgetItem,
+    QFontDialog,
 )
 from PyQt5.QtPrintSupport import QPrinter
 
@@ -134,6 +137,38 @@ def save_config(cfg: dict):
         CONFIG_FILE.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
     except Exception:
         pass
+
+
+def read_file_text(file_path: Path) -> str:
+    """Read *file_path* converting known formats to plain text."""
+    ext = file_path.suffix.lower()
+    if ext == ".docx":
+        try:
+            from docx import Document
+        except Exception as e:
+            raise RuntimeError("Biblioteca python-docx não instalada") from e
+        doc = Document(str(file_path))
+        return "\n".join(p.text for p in doc.paragraphs)
+    if ext == ".odt":
+        try:
+            from odf.opendocument import load
+            from odf import text, teletype
+        except Exception as e:
+            raise RuntimeError("Biblioteca odfpy não instalada") from e
+        doc = load(str(file_path))
+        paragraphs = doc.getElementsByType(text.P)
+        return "\n".join(teletype.extractText(p) for p in paragraphs)
+    if ext == ".rtf":
+        try:
+            from striprtf.striprtf import rtf_to_text
+        except Exception as e:
+            raise RuntimeError("Biblioteca striprtf não instalada") from e
+        raw = file_path.read_text(encoding="utf-8", errors="ignore")
+        return rtf_to_text(raw)
+    try:
+        return file_path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        return file_path.read_text(encoding="latin-1")
 
 
 def search_workspace(pattern: str):
@@ -490,12 +525,31 @@ class EditorWindow(QMainWindow):
 
         # Autosave
         self.autosave_enabled = True
+        self.autosave_interval = int(cfg.get("autosave_interval", 30_000))
+        autosave_dir = cfg.get("autosave_dir")
+        self.autosave_dir = Path(autosave_dir) if autosave_dir else (self.workspace / AUTOSAVE_DIRNAME)
+        ensure_dir(self.autosave_dir)
         self.autosave_timer = QTimer(self)
-        self.autosave_timer.setInterval(30_000)  # 30s
+        self.autosave_timer.setInterval(self.autosave_interval)
         self.autosave_timer.timeout.connect(self.autosave)
         self.autosave_timer.start()
 
         self._build_ui()
+
+        # Apply saved font settings
+        font_family = cfg.get("font_family")
+        font_size = cfg.get("font_size")
+        if font_family or font_size:
+            f = self.editor.font()
+            if font_family:
+                f.setFamily(font_family)
+            if font_size:
+                try:
+                    f.setPointSize(int(font_size))
+                except Exception:
+                    pass
+            self.editor.setFont(f)
+
         self._apply_theme(self.dark_mode)
         self._connect_signals()
 
@@ -514,6 +568,9 @@ class EditorWindow(QMainWindow):
         menu_tools.addAction(self.act_show_stats)
         menu_tools.addAction(self.act_toggle_sidebar)
         menu_tools.addAction(self.act_focus_mode)
+        menu_tools.addSeparator()
+        menu_tools.addAction(self.act_set_font)
+        menu_tools.addAction(self.act_autosave_settings)
         self.menu_history = self.menuBar().addMenu("Histórico de versões")
         self.menu_history.aboutToShow.connect(self._populate_history_menu)
 
@@ -730,6 +787,8 @@ class EditorWindow(QMainWindow):
         self.act_focus_mode = QAction("Modo Foco", self)
         self.act_focus_mode.setCheckable(True)
         self.act_focus_mode.setShortcut(QKeySequence("F11"))
+        self.act_set_font = QAction("Configurar Fonte…", self)
+        self.act_autosave_settings = QAction("Configurar Autosave…", self)
 
         # Sair
         self.act_close_tab = QAction("Fechar Arquivo (Ctrl+W)", self)
@@ -802,11 +861,47 @@ class EditorWindow(QMainWindow):
         self.act_show_stats.triggered.connect(self.show_stats_dialog)
         self.act_toggle_sidebar.triggered.connect(self.toggle_sidebar)
         self.act_focus_mode.triggered.connect(self.toggle_focus_mode)
+        self.act_set_font.triggered.connect(self.configure_font)
+        self.act_autosave_settings.triggered.connect(self.configure_autosave)
 
         self.find_bar.btn_close.clicked.connect(lambda: self.find_bar.setVisible(False))
         self.find_bar.btn_next.clicked.connect(lambda: self.find_next(True))
         self.find_bar.btn_prev.clicked.connect(lambda: self.find_next(False))
         self.find_bar.input.returnPressed.connect(lambda: self.find_next(True))
+
+    def configure_font(self):
+        font, ok = QFontDialog.getFont(self.editor.font(), self, "Escolher Fonte")
+        if ok:
+            self.editor.setFont(font)
+            cfg = load_config()
+            cfg["font_family"] = font.family()
+            cfg["font_size"] = font.pointSize()
+            save_config(cfg)
+
+    def configure_autosave(self):
+        interval, ok = QInputDialog.getInt(
+            self,
+            "Intervalo de Autosave",
+            "Intervalo em segundos:",
+            self.autosave_interval // 1000,
+            5,
+            3600,
+        )
+        if not ok:
+            return
+        dir_path = QFileDialog.getExistingDirectory(
+            self, "Pasta para backups", str(self.autosave_dir)
+        )
+        if not dir_path:
+            return
+        self.autosave_interval = interval * 1000
+        self.autosave_dir = Path(dir_path)
+        ensure_dir(self.autosave_dir)
+        self.autosave_timer.setInterval(self.autosave_interval)
+        cfg = load_config()
+        cfg["autosave_interval"] = self.autosave_interval
+        cfg["autosave_dir"] = dir_path
+        save_config(cfg)
 
     def toggle_sidebar(self, checked=None):
         if checked is None:
@@ -1244,22 +1339,22 @@ class EditorWindow(QMainWindow):
 
     def open_file(self, file_path: Path):
         try:
-            text = file_path.read_text(encoding="utf-8")
-        except UnicodeDecodeError:
-            # Tenta latin-1
-            try:
-                text = file_path.read_text(encoding="latin-1")
-            except Exception as e:
-                QMessageBox.critical(self, APP_NAME, f"Não foi possível abrir o arquivo como texto.\n{e}")
-                return
+            text = read_file_text(file_path)
         except Exception as e:
             QMessageBox.critical(self, APP_NAME, f"Erro ao abrir:\n{e}")
             return
-        self.current_file = file_path
+        ext = file_path.suffix.lower()
+        if ext in {".docx", ".odt", ".rtf"}:
+            # Importa como novo documento
+            self.current_file = None
+            title = f"{APP_NAME} — {file_path.name} (importado)"
+        else:
+            self.current_file = file_path
+            title = f"{APP_NAME} — {file_path.name}"
         self.editor.setPlainText(text)
         self.editor.setFocus()
         self.dirty = False
-        self.setWindowTitle(f"{APP_NAME} — {file_path.name}")
+        self.setWindowTitle(title)
 
     def maybe_save_changes(self) -> bool:
         if not self.dirty:
@@ -1304,8 +1399,13 @@ class EditorWindow(QMainWindow):
     def autosave(self):
         if not self.autosave_enabled or not self.dirty or not self.current_file:
             return
-        self.save_snapshot()
-        self.statusBar().showMessage("Autosave concluído.", 1500)
+        ensure_dir(self.autosave_dir)
+        backup_path = self.autosave_dir / f"{self.current_file.name}.bak"
+        try:
+            backup_path.write_text(self.editor.toPlainText(), encoding="utf-8")
+            self.statusBar().showMessage("Autosave concluído.", 1500)
+        except Exception:
+            self.statusBar().showMessage("Falha no autosave.", 1500)
 
     def _populate_history_menu(self):
         self.menu_history.clear()
