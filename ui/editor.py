@@ -87,7 +87,11 @@ from .religioes_faccoes import MainWindow as ReligioesFaccoesWindow
 from .cidades_planetas import MainWindow as CidadesPlanetasWindow
 from .theme import apply_theme, load_theme, THEMES as AVAILABLE_THEMES
 from icons import icon
+<<<<<<< Updated upstream
 from core.timeline.service import timeline_service
+=======
+from modulo_linguas import ConlangWidget
+>>>>>>> Stashed changes
 
 class FavoriteFileSystemModel(QFileSystemModel):
     """File system model that highlights favorite paths."""
@@ -720,6 +724,7 @@ class EditorWindow(QMainWindow):
         menu_tools.addAction(self.act_open_linha_tempo)
         menu_tools.addAction(self.act_open_religioes)
         menu_tools.addAction(self.act_open_cidades_planetas)
+        menu_tools.addAction(self.open_conlang)
         self.menu_history = self.menuBar().addMenu("Histórico de versões")
         self.menu_history.aboutToShow.connect(self._populate_history_menu)
 
@@ -957,6 +962,12 @@ class EditorWindow(QMainWindow):
         self.cidades_window.show()
         self.cidades_window.raise_()
         self.cidades_window.activateWindow()
+        
+    def open_conlang(self):
+        w = ConlangWidget(self.conn, self)
+        w.setWindowTitle("Dicionário de Língua Inventada")
+        w.resize(1100, 700)
+        w.show()
 
     def open_internal_link(self, target: str):
         """Open constructor windows based on a [[Tipo:Nome]] target."""
@@ -1054,7 +1065,7 @@ class EditorWindow(QMainWindow):
         self.act_open_linha_tempo = QAction("Construtor de Linha do Tempo…", self)
         self.act_open_religioes = QAction("Gerenciador de Religiões e Facções…", self)
         self.act_open_cidades_planetas = QAction("Construtor de Cidades/Planetas…", self)
-
+        self.act_open_conlang = QAction("Línguas",self)
         # Sair
         self.act_close_tab = QAction("Fechar Arquivo", self)
 
@@ -1172,6 +1183,7 @@ class EditorWindow(QMainWindow):
         self.act_open_linha_tempo.triggered.connect(self.open_linha_do_tempo)
         self.act_open_religioes.triggered.connect(self.open_religioes_faccoes)
         self.act_open_cidades_planetas.triggered.connect(self.open_cidades_planetas)
+        self.act_open_conlang.triggered.connect(self.act_open_conlang)
 
         self.find_bar.btn_close.clicked.connect(lambda: self.find_bar.setVisible(False))
         self.find_bar.btn_next.clicked.connect(lambda: self.find_next(True))
