@@ -32,7 +32,15 @@ import shutil
 import re
 from pathlib import Path
 
-from PyQt5.QtCore import Qt, QTimer, QModelIndex, QRegExp, QSortFilterProxyModel
+from PyQt5.QtCore import (
+    Qt,
+    QTimer,
+    QModelIndex,
+    QRegExp,
+    QSortFilterProxyModel,
+    QThread,
+    pyqtSignal,
+)
 from PyQt5.QtGui import (
     QCloseEvent,
     QKeySequence,
@@ -71,6 +79,8 @@ from PyQt5.QtWidgets import (
     QInputDialog,
     QMenu,
     QListWidget,
+    QDialog,
+    QListWidgetItem,
 )
 from PyQt5.QtPrintSupport import QPrinter
 
@@ -118,6 +128,32 @@ def save_config(cfg: dict):
         CONFIG_FILE.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
     except Exception:
         pass
+
+
+def search_workspace(pattern: str):
+    """Search all supported text files under DEFAULT_WORKSPACE for *pattern*.
+
+    Returns a list of tuples ``(Path, line_number, line_text)``.
+    ``pattern`` is matched case-insensitively as a plain substring.
+    """
+    results: list[tuple[Path, int, str]] = []
+    pattern_lower = pattern.lower()
+    for file_path in DEFAULT_WORKSPACE.rglob("*"):
+        if not file_path.is_file() or file_path.suffix.lower() not in SUPPORTED_TEXT_EXTS:
+            continue
+        try:
+            text = file_path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            try:
+                text = file_path.read_text(encoding="latin-1")
+            except Exception:
+                continue
+        except Exception:
+            continue
+        for num, line in enumerate(text.splitlines(), 1):
+            if pattern_lower in line.lower():
+                results.append((file_path, num, line.strip()))
+    return results
 
 
 class FavoriteFileSystemModel(QFileSystemModel):
@@ -344,6 +380,75 @@ class SpellPlainTextEdit(QPlainTextEdit):
         cursor.insertText(new_word)
         cursor.endEditBlock()
         self.main_window.check_spelling()
+
+
+
+class SearchWorker(QThread):
+    """Thread that searches files for a given pattern."""
+
+    result_found = pyqtSignal(Path, int, str)
+    finished = pyqtSignal()
+
+    def __init__(self, pattern: str):
+        super().__init__()
+        self.pattern = pattern
+
+    def run(self):
+        for path, lineno, line in search_workspace(self.pattern):
+            self.result_found.emit(path, lineno, line)
+        self.finished.emit()
+
+
+class GlobalSearchDialog(QDialog):
+    """Simple dialog to perform a search across the workspace."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Busca no Workspace")
+        layout = QVBoxLayout(self)
+        self.input = QLineEdit(self)
+        self.input.setPlaceholderText("Buscar…")
+        layout.addWidget(self.input)
+        self.list = QListWidget(self)
+        layout.addWidget(self.list, 1)
+        self.status = QLabel("", self)
+        layout.addWidget(self.status)
+
+        self.worker: SearchWorker | None = None
+        self.input.returnPressed.connect(self.start_search)
+        self.list.itemDoubleClicked.connect(self.open_result)
+
+    def start_search(self):
+        pattern = self.input.text().strip()
+        if not pattern:
+            return
+        self.list.clear()
+        self.status.setText("Buscando…")
+        self.worker = SearchWorker(pattern)
+        self.worker.result_found.connect(self._add_result)
+        self.worker.finished.connect(self._finished)
+        self.worker.start()
+
+    def _add_result(self, path: Path, lineno: int, line: str):
+        item = QListWidgetItem(f"{path}:{lineno} - {line}")
+        item.setData(Qt.UserRole, (str(path), lineno))
+        self.list.addItem(item)
+
+    def _finished(self):
+        self.status.setText(f"{self.list.count()} resultado(s)")
+
+    def open_result(self, item: QListWidgetItem):
+        data = item.data(Qt.UserRole)
+        if not data:
+            return
+        path_str, lineno = data
+        self.parent().open_file(Path(path_str))
+        cursor = self.parent().editor.textCursor()
+        cursor.movePosition(QTextCursor.Start)
+        cursor.movePosition(QTextCursor.Down, QTextCursor.MoveAnchor, lineno - 1)
+        self.parent().editor.setTextCursor(cursor)
+        self.parent().editor.setFocus()
+        self.accept()
 
 
 class EditorWindow(QMainWindow):
@@ -597,6 +702,7 @@ class EditorWindow(QMainWindow):
 
         # Busca e tema
         self.act_find = QAction("Buscar (Ctrl+F)", self)
+        self.act_global_find = QAction("Buscar no Workspace (Ctrl+Shift+F)", self)
         self.act_toggle_theme = QAction("Alternar Tema Claro/Escuro", self)
         self.act_show_stats = QAction("Estatísticas…", self)
 
@@ -608,6 +714,7 @@ class EditorWindow(QMainWindow):
         self.act_save.setShortcut(QKeySequence.Save)
         self.act_save_as.setShortcut(QKeySequence.SaveAs)
         self.act_find.setShortcut(QKeySequence.Find)
+        self.act_global_find.setShortcut(QKeySequence("Ctrl+Shift+F"))
         self.act_close_tab.setShortcut(QKeySequence.Close)
 
         # Add to toolbar
@@ -619,6 +726,7 @@ class EditorWindow(QMainWindow):
         self.toolbar.addAction(self.act_export)
         self.toolbar.addSeparator()
         self.toolbar.addAction(self.act_find)
+        self.toolbar.addAction(self.act_global_find)
         self.toolbar.addAction(self.act_toggle_theme)
         self.toolbar.addSeparator()
         self.toolbar.addAction(self.act_open_in_explorer)
@@ -641,6 +749,7 @@ class EditorWindow(QMainWindow):
         self.act_rename.triggered.connect(self.rename_current_file)
         self.act_delete.triggered.connect(self.delete_current_file)
         self.act_find.triggered.connect(self.toggle_find)
+        self.act_global_find.triggered.connect(self.open_global_search)
         self.act_toggle_theme.triggered.connect(self.toggle_theme)
         self.act_close_tab.triggered.connect(self.close_current_file)
         self.act_show_stats.triggered.connect(self.show_stats_dialog)
@@ -883,6 +992,10 @@ class EditorWindow(QMainWindow):
         if self.find_bar.isVisible():
             self.find_bar.input.setFocus()
             self.find_bar.input.selectAll()
+
+    def open_global_search(self):
+        dlg = GlobalSearchDialog(self)
+        dlg.exec_()
 
     def find_next(self, forward=True):
         pattern = self.find_bar.input.text()
