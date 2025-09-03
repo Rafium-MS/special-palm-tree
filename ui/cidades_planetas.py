@@ -21,6 +21,8 @@ from PyQt5.QtWidgets import (
     QTableWidget, QTableWidgetItem, QAbstractItemView, QFileDialog, QMessageBox
 )
 
+from core.economia.perfis import EconomiaPerfil, apply_rules
+
 # ----------------------------- Estado -----------------------------
 @dataclass
 class Localidade:
@@ -37,6 +39,7 @@ class Localidade:
 
     distritos: List[Dict[str, str]] = field(default_factory=list)  # {nome, descricao}
     pontos_interesse: List[Dict[str, str]] = field(default_factory=list)  # {nome, descricao}
+    perfil_economico: EconomiaPerfil = field(default_factory=EconomiaPerfil)
 
 # ----------------------------- Páginas -----------------------------
 class PageBasico(QWidget):
@@ -209,7 +212,9 @@ class PageResumo(QWidget):
         self.refresh()
 
     def refresh(self):
-        self.tx.setPlainText(json.dumps(asdict(self.l), indent=2, ensure_ascii=False))
+        data = asdict(self.l)
+        data["perfil_economico"] = asdict(self.l.perfil_economico)
+        self.tx.setPlainText(json.dumps(data, indent=2, ensure_ascii=False))
 
 # ----------------------------- Janela Principal -----------------------------
 class MainWindow(QMainWindow):
@@ -298,6 +303,7 @@ class MainWindow(QMainWindow):
         self.page_soc = PageSociedade(l, self._on_change)
         self.page_dis = PageDistritos(l, self._on_change)
         self.page_poi = PagePOI(l, self._on_change)
+        l.perfil_economico = apply_rules(l)
         self.page_res = PageResumo(l)
         for w in [self.page_basico, self.page_soc, self.page_dis, self.page_poi, self.page_res]:
             wrap = QWidget(); v = QVBoxLayout(wrap); v.setContentsMargins(16,16,16,16); v.addWidget(w)
@@ -306,6 +312,8 @@ class MainWindow(QMainWindow):
 
     def _on_change(self):
         if self.idx_atual >= 0:
+            l = self.localidades[self.idx_atual]
+            l.perfil_economico = apply_rules(l)
             self.page_res.refresh()
 
     def _build_menu(self):

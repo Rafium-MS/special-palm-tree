@@ -23,6 +23,8 @@ from PyQt5.QtWidgets import (
     QTableWidget, QTableWidgetItem, QAbstractItemView, QFileDialog, QMessageBox,
     QCheckBox, QInputDialog
 )
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.figure import Figure
 
 # ----------------------------- Estado -----------------------------
 @dataclass
@@ -361,6 +363,9 @@ class PageResumo(QWidget):
         layout.addWidget(QLabel("<h2>Resumo & Indicadores</h2>"))
         self.tx = QTextEdit(); self.tx.setReadOnly(True)
         layout.addWidget(self.tx)
+        self.fig = Figure(figsize=(5, 3))
+        self.canvas = FigureCanvas(self.fig)
+        layout.addWidget(self.canvas)
         self.refresh()
 
     def _calc_indicadores(self) -> Dict[str, float]:
@@ -391,6 +396,40 @@ class PageResumo(QWidget):
         data = asdict(self.e)
         data["indicadores"] = self._calc_indicadores()
         self.tx.setPlainText(json.dumps(data, indent=2, ensure_ascii=False))
+        self._plot_prod_consumo()
+
+    def _plot_prod_consumo(self) -> None:
+        """Exibe gráfico simples produção × consumo usando Matplotlib."""
+        ax = self.fig.clear().add_subplot(111)
+
+        def _parse(txt: str) -> float:
+            m = re.search(r"-?\d+(?:[.,]\d+)?", txt)
+            return float(m.group(0).replace(',', '.')) if m else 0.0
+
+        prod: Dict[str, float] = {}
+        for p in self.e.producao:
+            try:
+                prod[p.get("bem", "")] = _parse(str(p.get("quantidade", "0")))
+            except ValueError:
+                continue
+
+        cons: Dict[str, float] = {}
+        for r in self.e.rotas:
+            b = r.get("bem", "")
+            cons[b] = cons.get(b, 0.0) + _parse(r.get("volume", "0"))
+
+        bens = sorted(set(prod) | set(cons))
+        if not bens:
+            self.canvas.draw_idle()
+            return
+
+        for i, b in enumerate(bens):
+            ax.bar(i - 0.2, prod.get(b, 0.0), width=0.4, label="Produção" if i == 0 else "")
+            ax.bar(i + 0.2, cons.get(b, 0.0), width=0.4, label="Consumo" if i == 0 else "")
+        ax.set_xticks(range(len(bens)))
+        ax.set_xticklabels(bens, rotation=45, ha="right")
+        ax.legend()
+        self.canvas.draw_idle()
 
 # ----------------------------- Janela Principal -----------------------------
 class MainWindow(QMainWindow):
