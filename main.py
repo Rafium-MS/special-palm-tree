@@ -42,6 +42,9 @@ from PyQt5.QtGui import (
     QFont,
     QTextDocument,
     QTextCursor,
+    QIcon,
+    QStandardItem,
+    QStandardItemModel,
 )
 
 from PyQt5.QtWidgets import (
@@ -114,6 +117,24 @@ def save_config(cfg: dict):
         CONFIG_FILE.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
     except Exception:
         pass
+
+
+class FavoriteFileSystemModel(QFileSystemModel):
+    """File system model that highlights favorite paths."""
+
+    def __init__(self, favorites: set[str], parent=None):
+        super().__init__(parent)
+        self.favorites = favorites
+        self.favorite_icon = QIcon.fromTheme("star")
+        if self.favorite_icon.isNull():
+            self.favorite_icon = QApplication.style().standardIcon(QStyle.SP_DialogYesButton)
+
+    def data(self, index: QModelIndex, role: int = Qt.DisplayRole):
+        if role == Qt.DecorationRole and index.column() == 0:
+            path = self.filePath(index)
+            if path in self.favorites:
+                return self.favorite_icon
+        return super().data(index, role)
 
 class MarkdownHighlighter(QSyntaxHighlighter):
     def __init__(self, parent=None):
@@ -309,6 +330,11 @@ class EditorWindow(QMainWindow):
         ensure_dir(workspace)
         self.workspace = workspace
 
+        self.favorites: set[str] = set(cfg.get("favorites", []))
+        self.icon_favorite = QIcon.fromTheme("star")
+        if self.icon_favorite.isNull():
+            self.icon_favorite = self.style().standardIcon(QStyle.SP_DialogYesButton)
+
         self.spell_checker = SpellChecker(language="pt")
         self.misspelled_words = set()
         self._spell_timer = QTimer(self)
@@ -352,7 +378,7 @@ class EditorWindow(QMainWindow):
         tree_splitter = QSplitter(Qt.Horizontal, self)
         editor_splitter = QSplitter(Qt.Horizontal, self)
 
-        self.fs_model = QFileSystemModel(self)
+        self.fs_model = FavoriteFileSystemModel(self.favorites, self)
         self.fs_model.setRootPath(str(self.workspace))
         self.fs_model.setReadOnly(False)
 
@@ -363,6 +389,24 @@ class EditorWindow(QMainWindow):
         for i in range(1, 4):
             self.tree.hideColumn(i)
         self.tree.setHeaderHidden(True)
+        self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
+
+        self.fav_model = QStandardItemModel(self)
+        self.fav_view = QTreeView(self)
+        self.fav_view.setModel(self.fav_model)
+        self.fav_view.setHeaderHidden(True)
+        self.fav_view.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.fav_view.setFixedHeight(120)
+
+        fav_label = QLabel("Favoritos", self)
+
+        tree_container = QWidget(self)
+        tree_layout = QVBoxLayout(tree_container)
+        tree_layout.setContentsMargins(0, 0, 0, 0)
+        tree_layout.setSpacing(0)
+        tree_layout.addWidget(fav_label)
+        tree_layout.addWidget(self.fav_view)
+        tree_layout.addWidget(self.tree, 1)
 
         self.editor = SpellPlainTextEdit(self)
         self.editor.setPlaceholderText("Escreva aqui…")
@@ -386,13 +430,14 @@ class EditorWindow(QMainWindow):
         editor_splitter.addWidget(self.preview)
         editor_splitter.setStretchFactor(0, 1)
 
-        tree_splitter.addWidget(self.tree)
+        tree_splitter.addWidget(tree_container)
         tree_splitter.addWidget(editor_splitter)
         tree_splitter.setStretchFactor(1, 1)
 
         root.addWidget(tree_splitter, 1)
 
         self._update_preview()
+        self._refresh_favorites_view()
 
         sb = QStatusBar(self)
         self.lbl_path = QLabel("Pasta: " + str(self.workspace))
@@ -538,6 +583,8 @@ class EditorWindow(QMainWindow):
         self.editor.textChanged.connect(self._update_preview)
         self.tree.doubleClicked.connect(self._on_tree_double_clicked)
         self.tree.customContextMenuRequested.connect(self._on_tree_context_menu)
+        self.fav_view.doubleClicked.connect(self._on_fav_double_clicked)
+        self.fav_view.customContextMenuRequested.connect(self._on_fav_context_menu)
 
         self.act_choose_workspace.triggered.connect(self.choose_workspace)
         self.act_open_in_explorer.triggered.connect(self.open_workspace_in_explorer)
@@ -556,6 +603,64 @@ class EditorWindow(QMainWindow):
         self.find_bar.btn_next.clicked.connect(lambda: self.find_next(True))
         self.find_bar.btn_prev.clicked.connect(lambda: self.find_next(False))
         self.find_bar.input.returnPressed.connect(lambda: self.find_next(True))
+        
+    # Favoritos -----------------------------------------------------------
+    def _refresh_favorites_view(self):
+        self.fav_model.clear()
+        for path_str in sorted(self.favorites):
+            path = Path(path_str)
+            item = QStandardItem(path.name)
+            item.setEditable(False)
+            item.setData(path_str, Qt.UserRole)
+            item.setIcon(self.icon_favorite)
+            self.fav_model.appendRow(item)
+
+    def add_favorite(self, path: Path):
+        path_str = str(path)
+        if path_str in self.favorites:
+            return
+        self.favorites.add(path_str)
+        self._refresh_favorites_view()
+        idx = self.fs_model.index(path_str)
+        if idx.isValid():
+            self.fs_model.dataChanged.emit(idx, idx)
+        self.save_favorites()
+
+    def remove_favorite(self, path: Path):
+        path_str = str(path)
+        if path_str not in self.favorites:
+            return
+        self.favorites.remove(path_str)
+        self._refresh_favorites_view()
+        idx = self.fs_model.index(path_str)
+        if idx.isValid():
+            self.fs_model.dataChanged.emit(idx, idx)
+        self.save_favorites()
+
+    def save_favorites(self):
+        cfg = load_config()
+        cfg["favorites"] = list(self.favorites)
+        save_config(cfg)
+
+    def _on_fav_double_clicked(self, index: QModelIndex):
+        if not index.isValid():
+            return
+        path = Path(index.data(Qt.UserRole))
+        if path.is_file():
+            if not self.maybe_save_changes():
+                return
+            self.open_file(path)
+
+    def _on_fav_context_menu(self, pos):
+        index = self.fav_view.indexAt(pos)
+        if not index.isValid():
+            return
+        path = Path(index.data(Qt.UserRole))
+        menu = QMenu(self)
+        act_remove = menu.addAction("Remover dos Favoritos")
+        chosen = menu.exec_(self.fav_view.viewport().mapToGlobal(pos))
+        if chosen == act_remove:
+            self.remove_favorite(path)
 
     # Ações ---------------------------------------------------------------
     def choose_workspace(self):
@@ -766,8 +871,14 @@ class EditorWindow(QMainWindow):
         menu = QMenu(self)
         act_new_file = menu.addAction("Novo arquivo…")
         act_new_folder = menu.addAction("Nova pasta…")
+        act_favorite = None
+        file_path = None
         if index.isValid():
             file_path = Path(self.fs_model.filePath(index))
+            if str(file_path) in self.favorites:
+                act_favorite = menu.addAction("Remover dos Favoritos")
+            else:
+                act_favorite = menu.addAction("Adicionar aos Favoritos")
             if file_path.is_file():
                 menu.addSeparator()
                 act_rename = menu.addAction("Renomear…")
@@ -785,21 +896,24 @@ class EditorWindow(QMainWindow):
             name, ok = QInputDialog.getText(self, "Nova pasta", "Nome da pasta:")
             if ok and name.strip():
                 ensure_dir(base_dir / name)
-        elif index.isValid():
-            file_path = Path(self.fs_model.filePath(index))
-            if file_path.is_file():
-                if chosen and chosen.text().startswith("Renomear"):
-                    new_name, ok = QInputDialog.getText(self, "Renomear", "Novo nome:", text=file_path.name)
-                    if ok and new_name.strip():
-                        new_path = file_path.with_name(new_name)
-                        if new_path.exists():
-                            QMessageBox.warning(self, APP_NAME, "Já existe um item com esse nome.")
-                        else:
-                            file_path.rename(new_path)
-                elif chosen and chosen.text().startswith("Excluir"):
-                    resp = QMessageBox.question(self, APP_NAME, f"Excluir {file_path.name}?", QMessageBox.Yes | QMessageBox.No)
-                    if resp == QMessageBox.Yes:
-                        file_path.unlink()
+        elif chosen == act_favorite and file_path is not None:
+            if str(file_path) in self.favorites:
+                self.remove_favorite(file_path)
+            else:
+                self.add_favorite(file_path)
+        elif index.isValid() and file_path and file_path.is_file():
+            if chosen and chosen.text().startswith("Renomear"):
+                new_name, ok = QInputDialog.getText(self, "Renomear", "Novo nome:", text=file_path.name)
+                if ok and new_name.strip():
+                    new_path = file_path.with_name(new_name)
+                    if new_path.exists():
+                        QMessageBox.warning(self, APP_NAME, "Já existe um item com esse nome.")
+                    else:
+                        file_path.rename(new_path)
+            elif chosen and chosen.text().startswith("Excluir"):
+                resp = QMessageBox.question(self, APP_NAME, f"Excluir {file_path.name}?", QMessageBox.Yes | QMessageBox.No)
+                if resp == QMessageBox.Yes:
+                    file_path.unlink()
 
     def _apply_theme(self, dark: bool):
         if dark:
@@ -900,6 +1014,7 @@ class EditorWindow(QMainWindow):
         cfg = load_config()
         cfg["workspace"] = str(self.workspace)
         cfg["dark_mode"] = self.dark_mode
+        cfg["favorites"] = list(self.favorites)
         save_config(cfg)
         event.accept()
 
