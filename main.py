@@ -3,6 +3,7 @@ import sys
 from PyQt5.QtWidgets import QApplication, QMessageBox
 
 from config import settings
+from shared.i18n import t
 from shared.logging import get_logger
 from shared.utils import ensure_dir
 from ui.editor import EditorWindow
@@ -23,8 +24,8 @@ def main():
         logger.exception("Unhandled error")
         msg = QMessageBox()
         msg.setIcon(QMessageBox.Critical)
-        msg.setWindowTitle("Erro")
-        msg.setText("Ocorreu um erro inesperado.")
+        msg.setWindowTitle(t("error.title"))
+        msg.setText(t("error.unexpected"))
         msg.setInformativeText(str(exc))
         msg.exec_()
 

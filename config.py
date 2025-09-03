@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import os
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -31,6 +31,7 @@ class Config:
             with path.open("r", encoding="utf-8") as fh:
                 data = json.load(fh)
             self.theme = data.get("theme", self.theme)
+            self.language = data.get("language", self.language)
 
     def save_theme(self, theme: str) -> None:
         """Persist the selected *theme* to the workspace settings file."""
