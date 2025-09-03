@@ -1,7 +1,7 @@
 CREATE TABLE IF NOT EXISTS characters (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
-    age INTEGER,
+    birth_year INTEGER,
     location TEXT,
     faction TEXT
 );
@@ -27,11 +27,15 @@ CREATE TABLE IF NOT EXISTS economy_profiles (
 );
 
 CREATE TABLE IF NOT EXISTS timeline_events (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    description TEXT NOT NULL,
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
     year INTEGER,
-    location TEXT,
-    factions TEXT
+    era TEXT,
+    scope TEXT,
+    description TEXT,
+    characters TEXT,
+    locations TEXT,
+    tags TEXT
 );
 
 CREATE TABLE IF NOT EXISTS worlds (

@@ -12,19 +12,19 @@ class CharacterRepo:
 
     def add(self, character: models.Character) -> int:
         cur = self.conn.execute(
-            "INSERT INTO characters (name, age, location, faction) VALUES (?, ?, ?, ?)",
-            (character.name, character.age, character.location, character.faction),
+            "INSERT INTO characters (name, birth_year, location, faction) VALUES (?, ?, ?, ?)",
+            (character.name, character.birth_year, character.location, character.faction),
         )
         self.conn.commit()
         return cur.lastrowid
 
     def list(self) -> list[models.Character]:
         cur = self.conn.execute(
-            "SELECT name, age, location, faction FROM characters"
+            "SELECT name, birth_year, location, faction FROM characters"
         )
         return [
             models.Character(
-                name=row[0], age=row[1], location=row[2], faction=row[3]
+                name=row[0], birth_year=row[1], location=row[2], faction=row[3]
             )
             for row in cur.fetchall()
         ]
@@ -98,12 +98,20 @@ class TimelineEventRepo:
 
     def add(self, event: models.TimelineEvent) -> int:
         cur = self.conn.execute(
-            "INSERT INTO timeline_events (description, year, location, factions) VALUES (?, ?, ?, ?)",
             (
-                event.description,
+                "INSERT INTO timeline_events (id, title, year, era, scope, description, characters, locations, tags) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            ),
+            (
+                event.id,
+                event.title,
                 event.year,
-                event.location,
-                ",".join(event.factions_involved),
+                event.era,
+                event.scope,
+                event.description,
+                ",".join(event.character_ids),
+                ",".join(event.location_ids),
+                ",".join(event.tags),
             ),
         )
         self.conn.commit()
@@ -111,14 +119,22 @@ class TimelineEventRepo:
 
     def list(self) -> list[models.TimelineEvent]:
         cur = self.conn.execute(
-            "SELECT description, year, location, factions FROM timeline_events"
+            (
+                "SELECT id, title, year, era, scope, description, characters, locations, tags "
+                "FROM timeline_events"
+            )
         )
         return [
             models.TimelineEvent(
-                description=row[0],
-                year=row[1],
-                location=row[2],
-                factions_involved=[f for f in row[3].split(",") if f],
+                id=row[0],
+                title=row[1],
+                year=row[2],
+                era=row[3],
+                scope=row[4],
+                description=row[5],
+                character_ids=[c for c in row[6].split(",") if c],
+                location_ids=[loc for loc in row[7].split(",") if loc],
+                tags=[t for t in row[8].split(",") if t],
             )
             for row in cur.fetchall()
         ]

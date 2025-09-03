@@ -76,8 +76,8 @@ def seed_demo(conn: sqlite3.Connection) -> None:
     cur.execute("SELECT COUNT(*) FROM characters")
     if cur.fetchone()[0] == 0:
         cur.execute(
-            "INSERT INTO characters (name, age, location, faction) VALUES (?, ?, ?, ?)",
-            ("Alice", 30, "Springfield", "Guild"),
+            "INSERT INTO characters (name, birth_year, location, faction) VALUES (?, ?, ?, ?)",
+            ("Alice", -30, "Springfield", "Guild"),
         )
 
     cur.execute("SELECT COUNT(*) FROM economy_profiles")
@@ -90,8 +90,11 @@ def seed_demo(conn: sqlite3.Connection) -> None:
     cur.execute("SELECT COUNT(*) FROM timeline_events")
     if cur.fetchone()[0] == 0:
         cur.execute(
-            "INSERT INTO timeline_events (description, year, location, factions) VALUES (?, ?, ?, ?)",
-            ("Founding", 0, "Springfield", "Guild"),
+            (
+                "INSERT INTO timeline_events (id, title, year, era, scope, description, characters, locations, tags) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            ),
+            ("evt-1", "Founding", 0, None, "local", "Founding", "", "Springfield", "Guild"),
         )
 
     conn.commit()

@@ -10,9 +10,10 @@ Como executar:
   python linha_do_tempo.py
 """
 from dataclasses import dataclass, field, asdict
-from typing import List, Dict, Optional
+from typing import Dict, List, Optional
 import json
 import sys
+import uuid
 
 from PyQt5.QtCore import Qt, QSize
 from PyQt5.QtWidgets import (
@@ -22,7 +23,7 @@ from PyQt5.QtWidgets import (
     QTableWidget, QTableWidgetItem, QAbstractItemView, QFileDialog, QMessageBox,
     QInputDialog
 )
-from PyQt5.QtWidgets import QGraphicsScene, QGraphicsView
+from PyQt5.QtWidgets import QGraphicsScene, QGraphicsView, QGraphicsEllipseItem, QGraphicsItem
 from PyQt5.QtGui import QPen, QBrush, QColor, QImage, QPainter
 from PyQt5.QtSvg import QSvgGenerator
 
@@ -39,14 +40,16 @@ class Era:
 class Evento:
     titulo: str
     instante: int
+    id: str = field(default_factory=lambda: str(uuid.uuid4()))
     tipo: str = "Geral"  # Guerra, Descoberta, Política, Natural, Cultural, etc.
     importancia: int = 3  # 1..5
-    local: str = ""
+    escopo: str = "local"  # local/personagem/mundo
     descricao: str = ""
     era: str = ""  # nome da era a que pertence (opcional)
     tags: List[str] = field(default_factory=list)
     depende_de: List[str] = field(default_factory=list)  # lista de títulos
-    entidades: List[str] = field(default_factory=list)  # IDs de personagens/cidades/etc.
+    personagens: List[str] = field(default_factory=list)  # IDs de personagens
+    lugares: List[str] = field(default_factory=list)  # IDs de lugares
 
 @dataclass
 class Timeline:
@@ -57,6 +60,7 @@ class Timeline:
     eras: List[Era] = field(default_factory=list)
     eventos: List[Evento] = field(default_factory=list)
     notas: str = ""
+    nascimentos: Dict[str, int] = field(default_factory=dict)  # id -> ano de nascimento
 
 # ----------------------------- Templates -----------------------------
 TEMPLATES_TL: Dict[str, Dict] = {
@@ -201,9 +205,17 @@ class PageEventos(QWidget):
         self.on_change = on_change
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel("<h2>Eventos</h2>"))
-        self.tbl = QTableWidget(0, 8)
+        self.tbl = QTableWidget(0, 9)
         self.tbl.setHorizontalHeaderLabels([
-            "Título", "Instante", "Tipo", "Importância", "Local", "Era", "Tags (,) ", "Entidades (IDs ,)"
+            "Título",
+            "Instante",
+            "Tipo",
+            "Importância",
+            "Escopo",
+            "Era",
+            "Personagens (IDs ,)",
+            "Lugares (IDs ,)",
+            "Tags (,)",
         ])
         self.tbl.verticalHeader().setVisible(False)
         self.tbl.setEditTriggers(QAbstractItemView.AllEditTriggers)
@@ -211,7 +223,7 @@ class PageEventos(QWidget):
         hl = QHBoxLayout()
         btn_add = QPushButton("Adicionar Evento")
         btn_del = QPushButton("Remover Selecionado")
-        btn_view = QPushButton("Ver Entidades")
+        btn_view = QPushButton("Ver Ligações")
         hl.addWidget(btn_add); hl.addWidget(btn_del); hl.addWidget(btn_view); hl.addStretch(1)
         layout.addLayout(hl)
         btn_save = QPushButton("Salvar Eventos")
@@ -220,7 +232,7 @@ class PageEventos(QWidget):
         layout.addStretch(1)
         btn_add.clicked.connect(self._add)
         btn_del.clicked.connect(self._del)
-        btn_view.clicked.connect(self._ver_entidades)
+        btn_view.clicked.connect(self._ver_ligacoes)
         self._load()
 
     def _load(self):
@@ -231,10 +243,11 @@ class PageEventos(QWidget):
             self.tbl.setItem(r, 1, QTableWidgetItem(str(ev.instante)))
             self.tbl.setItem(r, 2, QTableWidgetItem(ev.tipo))
             self.tbl.setItem(r, 3, QTableWidgetItem(str(ev.importancia)))
-            self.tbl.setItem(r, 4, QTableWidgetItem(ev.local))
+            self.tbl.setItem(r, 4, QTableWidgetItem(ev.escopo))
             self.tbl.setItem(r, 5, QTableWidgetItem(ev.era))
-            self.tbl.setItem(r, 6, QTableWidgetItem(",".join(ev.tags)))
-            self.tbl.setItem(r, 7, QTableWidgetItem(",".join(ev.entidades)))
+            self.tbl.setItem(r, 6, QTableWidgetItem(",".join(ev.personagens)))
+            self.tbl.setItem(r, 7, QTableWidgetItem(",".join(ev.lugares)))
+            self.tbl.setItem(r, 8, QTableWidgetItem(",".join(ev.tags)))
 
     def _add(self):
         r = self.tbl.rowCount(); self.tbl.insertRow(r)
@@ -242,22 +255,28 @@ class PageEventos(QWidget):
         self.tbl.setItem(r, 1, QTableWidgetItem("0"))
         self.tbl.setItem(r, 2, QTableWidgetItem("Geral"))
         self.tbl.setItem(r, 3, QTableWidgetItem("3"))
-        self.tbl.setItem(r, 4, QTableWidgetItem(""))
+        self.tbl.setItem(r, 4, QTableWidgetItem("local"))
         self.tbl.setItem(r, 5, QTableWidgetItem(""))
         self.tbl.setItem(r, 6, QTableWidgetItem(""))
         self.tbl.setItem(r, 7, QTableWidgetItem(""))
+        self.tbl.setItem(r, 8, QTableWidgetItem(""))
 
     def _del(self):
         r = self.tbl.currentRow()
         if r >= 0:
             self.tbl.removeRow(r)
 
-    def _ver_entidades(self):
+    def _ver_ligacoes(self):
         r = self.tbl.currentRow()
         if r < 0:
             return
-        ents = self.tbl.item(r, 7).text() if self.tbl.item(r, 7) else ""
-        QMessageBox.information(self, "Entidades", ents or "Sem entidades associadas")
+        pers = self.tbl.item(r, 6).text() if self.tbl.item(r, 6) else ""
+        lugs = self.tbl.item(r, 7).text() if self.tbl.item(r, 7) else ""
+        QMessageBox.information(
+            self,
+            "Ligações",
+            f"Personagens: {pers or '-'}\nLugares: {lugs or '-'}",
+        )
 
     def save(self):
         eventos = []
@@ -268,23 +287,44 @@ class PageEventos(QWidget):
                 instante = int(self.tbl.item(r, 1).text())
                 tipo = self.tbl.item(r, 2).text() if self.tbl.item(r, 2) else "Geral"
                 importancia = int(self.tbl.item(r, 3).text())
-                local = self.tbl.item(r, 4).text() if self.tbl.item(r, 4) else ""
+                escopo = self.tbl.item(r, 4).text() if self.tbl.item(r, 4) else "local"
                 era = self.tbl.item(r, 5).text() if self.tbl.item(r, 5) else ""
-                tags = [t.strip() for t in (self.tbl.item(r, 6).text() or "").split(",") if t.strip()]
-                ents = [e.strip() for e in (self.tbl.item(r, 7).text() or "").split(",") if e.strip()]
+                pers = [
+                    e.strip()
+                    for e in (self.tbl.item(r, 6).text() or "").split(",")
+                    if e.strip()
+                ]
+                lugs = [
+                    e.strip()
+                    for e in (self.tbl.item(r, 7).text() or "").split(",")
+                    if e.strip()
+                ]
+                tags = [
+                    t.strip()
+                    for t in (self.tbl.item(r, 8).text() or "").split(",")
+                    if t.strip()
+                ]
                 if era and (era not in eras_nomes):
                     raise ValueError(f"Era '{era}' não existe")
-                eventos.append(Evento(
-                    titulo=titulo,
-                    instante=instante,
-                    tipo=tipo,
-                    importancia=importancia,
-                    local=local,
-                    descricao="",
-                    era=era,
-                    tags=tags,
-                    entidades=ents,
-                ))
+                for pid in pers:
+                    nasc = self.tl.nascimentos.get(pid)
+                    if nasc is not None and instante < nasc:
+                        raise ValueError(
+                            f"Personagem '{pid}' aparece antes de nascer"
+                        )
+                eventos.append(
+                    Evento(
+                        titulo=titulo,
+                        instante=instante,
+                        tipo=tipo,
+                        importancia=importancia,
+                        escopo=escopo,
+                        era=era,
+                        tags=tags,
+                        personagens=pers,
+                        lugares=lugs,
+                    )
+                )
             except Exception as err:
                 QMessageBox.critical(self, "Erro", f"Linha {r+1}: {err}")
                 return
@@ -368,13 +408,28 @@ class PageVisualizacao(QWidget):
         self.scene = QGraphicsScene(self)
         self.view = QGraphicsView(self.scene)
         self.view.setRenderHints(self.view.renderHints())
-        self.btn_redraw = QPushButton("Atualizar visualização")
+        self.btn_redraw = QPushButton("Atualizar")
         self.btn_redraw.clicked.connect(self.redraw)
+        self.sp_ini = QSpinBox(); self.sp_ini.setRange(-1000000, 1000000)
+        self.sp_fim = QSpinBox(); self.sp_fim.setRange(-1000000, 1000000)
+        self.ed_filtro = QLineEdit()
+
+        t0, t1 = self._range_tempo()
+        self.sp_ini.setValue(t0)
+        self.sp_fim.setValue(t1)
 
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel("<h2>Visualização (Gantt)</h2>"))
+        ctrl = QHBoxLayout()
+        ctrl.addWidget(QLabel("Início:"))
+        ctrl.addWidget(self.sp_ini)
+        ctrl.addWidget(QLabel("Fim:"))
+        ctrl.addWidget(self.sp_fim)
+        ctrl.addWidget(QLabel("Entidade:"))
+        ctrl.addWidget(self.ed_filtro)
+        ctrl.addWidget(self.btn_redraw)
+        layout.addLayout(ctrl)
         layout.addWidget(self.view, 1)
-        layout.addWidget(self.btn_redraw)
         self.redraw()
 
     def export_png(self, path: str):
@@ -429,8 +484,11 @@ class PageVisualizacao(QWidget):
 
         self.view.setSceneRect(0, 0, width, height)
 
-        t0, t1 = self._range_tempo()
+        t0, t1 = self.sp_ini.value(), self.sp_fim.value()
         span = float(t1 - t0)
+        if span <= 0:
+            span = 1.0
+            t1 = t0 + 1
 
         def xmap(x):
             return left_pad + (width - left_pad - right_pad) * ((x - t0) / span)
@@ -466,11 +524,37 @@ class PageVisualizacao(QWidget):
             label.setPos(10, y - 2)
 
         # eventos como marcadores (círculos) sobre o eixo
+        filtro = self.ed_filtro.text().strip().lower()
+
+        def inv_xmap(px: float) -> float:
+            return t0 + (px - left_pad) * span / (width - left_pad - right_pad)
+
+        class EventItem(QGraphicsEllipseItem):
+            def __init__(self, ev: Evento, x: float, y: float, r: float):
+                super().__init__(x - r, y - r, 2 * r, 2 * r)
+                self.ev = ev
+                self.r = r
+                self.y_fixed = y - r
+                self.setPen(pen_event)
+                self.setBrush(brush_event)
+                self.setFlag(QGraphicsItem.ItemIsMovable, True)
+                self.setFlag(QGraphicsItem.ItemSendsGeometryChanges, True)
+
+            def itemChange(self, change, value):
+                if change == QGraphicsItem.ItemPositionChange:
+                    value.setY(self.y_fixed)
+                    self.ev.instante = int(round(inv_xmap(value.x() + self.r)))
+                    return value
+                return super().itemChange(change, value)
+
         for ev in sorted(self.tl.eventos, key=lambda e: (e.instante, e.titulo)):
+            all_links = [s.lower() for s in (ev.personagens + ev.lugares)]
+            if filtro and filtro not in all_links:
+                continue
             x = xmap(ev.instante)
             r = 5
-            self.scene.addEllipse(x - r, y_axis - r, 2*r, 2*r, pen_event, brush_event)
-            # rótulo do evento
+            item = EventItem(ev, x, y_axis, r)
+            self.scene.addItem(item)
             tag = f"{ev.titulo} ({ev.instante})"
             lbl = self.scene.addText(tag)
             lbl.setDefaultTextColor(QColor("#7f1d1d"))
