@@ -249,6 +249,9 @@ class MainWindow(QMainWindow):
         self.btn_del.clicked.connect(self._excluir)
         self.lst.currentRowChanged.connect(self._trocar)
 
+        # menu
+        self._build_menu()
+
     def _nova(self):
         l = Localidade(nome=f"Localidade {len(self.localidades)+1}")
         self.localidades.append(l)
@@ -304,6 +307,50 @@ class MainWindow(QMainWindow):
     def _on_change(self):
         if self.idx_atual >= 0:
             self.page_res.refresh()
+
+    def _build_menu(self):
+        m = self.menuBar().addMenu("Arquivo")
+        act_exp = m.addAction("Exportar localidade (JSON)")
+        act_exp.triggered.connect(self._exportar)
+        act_imp = m.addAction("Importar localidade (JSON)")
+        act_imp.triggered.connect(self._importar)
+        m.addSeparator()
+        act_all = m.addAction("Exportar todas (JSON)")
+        act_all.triggered.connect(self._exportar_todas)
+
+    def _exportar(self):
+        i = self.idx_atual
+        if i < 0:
+            return
+        l = self.localidades[i]
+        path, _ = QFileDialog.getSaveFileName(self, "Salvar Localidade", f"{l.nome}.json", "JSON (*.json)")
+        if not path:
+            return
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(asdict(l), f, ensure_ascii=False, indent=2)
+
+    def _importar(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Importar Localidade", "", "JSON (*.json)")
+        if not path:
+            return
+        try:
+            data = json.loads(open(path, 'r', encoding='utf-8').read())
+            l = Localidade(**data)
+            self.localidades.append(l)
+            self._refresh_lista()
+        except Exception as err:
+            QMessageBox.critical(self, "Erro", f"Falha ao importar: {err}")
+
+    def _exportar_todas(self):
+        if not self.localidades:
+            QMessageBox.information(self, "Aviso", "Nenhuma localidade para exportar.")
+            return
+        path, _ = QFileDialog.getSaveFileName(self, "Salvar Conjunto", "localidades.json", "JSON (*.json)")
+        if not path:
+            return
+        data = [asdict(l) for l in self.localidades]
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
 
 # ----------------------------- Execução -----------------------------
 def main():

@@ -14,7 +14,7 @@ from typing import List, Dict, Optional
 import json
 import sys
 
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QSize
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QSplitter, QListWidget,
     QStackedWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel, QLineEdit,
@@ -23,7 +23,8 @@ from PyQt5.QtWidgets import (
     QInputDialog
 )
 from PyQt5.QtWidgets import QGraphicsScene, QGraphicsView
-from PyQt5.QtGui import QPen, QBrush, QColor
+from PyQt5.QtGui import QPen, QBrush, QColor, QImage, QPainter
+from PyQt5.QtSvg import QSvgGenerator
 
 # ----------------------------- Estado -----------------------------
 @dataclass
@@ -45,6 +46,7 @@ class Evento:
     era: str = ""  # nome da era a que pertence (opcional)
     tags: List[str] = field(default_factory=list)
     depende_de: List[str] = field(default_factory=list)  # lista de títulos
+    entidades: List[str] = field(default_factory=list)  # IDs de personagens/cidades/etc.
 
 @dataclass
 class Timeline:
@@ -199,15 +201,18 @@ class PageEventos(QWidget):
         self.on_change = on_change
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel("<h2>Eventos</h2>"))
-        self.tbl = QTableWidget(0, 7)
-        self.tbl.setHorizontalHeaderLabels(["Título", "Instante", "Tipo", "Importância", "Local", "Era", "Tags (,) "])
+        self.tbl = QTableWidget(0, 8)
+        self.tbl.setHorizontalHeaderLabels([
+            "Título", "Instante", "Tipo", "Importância", "Local", "Era", "Tags (,) ", "Entidades (IDs ,)"
+        ])
         self.tbl.verticalHeader().setVisible(False)
         self.tbl.setEditTriggers(QAbstractItemView.AllEditTriggers)
         layout.addWidget(self.tbl)
         hl = QHBoxLayout()
         btn_add = QPushButton("Adicionar Evento")
         btn_del = QPushButton("Remover Selecionado")
-        hl.addWidget(btn_add); hl.addWidget(btn_del); hl.addStretch(1)
+        btn_view = QPushButton("Ver Entidades")
+        hl.addWidget(btn_add); hl.addWidget(btn_del); hl.addWidget(btn_view); hl.addStretch(1)
         layout.addLayout(hl)
         btn_save = QPushButton("Salvar Eventos")
         btn_save.clicked.connect(self.save)
@@ -215,6 +220,7 @@ class PageEventos(QWidget):
         layout.addStretch(1)
         btn_add.clicked.connect(self._add)
         btn_del.clicked.connect(self._del)
+        btn_view.clicked.connect(self._ver_entidades)
         self._load()
 
     def _load(self):
@@ -228,6 +234,7 @@ class PageEventos(QWidget):
             self.tbl.setItem(r, 4, QTableWidgetItem(ev.local))
             self.tbl.setItem(r, 5, QTableWidgetItem(ev.era))
             self.tbl.setItem(r, 6, QTableWidgetItem(",".join(ev.tags)))
+            self.tbl.setItem(r, 7, QTableWidgetItem(",".join(ev.entidades)))
 
     def _add(self):
         r = self.tbl.rowCount(); self.tbl.insertRow(r)
@@ -238,11 +245,19 @@ class PageEventos(QWidget):
         self.tbl.setItem(r, 4, QTableWidgetItem(""))
         self.tbl.setItem(r, 5, QTableWidgetItem(""))
         self.tbl.setItem(r, 6, QTableWidgetItem(""))
+        self.tbl.setItem(r, 7, QTableWidgetItem(""))
 
     def _del(self):
         r = self.tbl.currentRow()
         if r >= 0:
             self.tbl.removeRow(r)
+
+    def _ver_entidades(self):
+        r = self.tbl.currentRow()
+        if r < 0:
+            return
+        ents = self.tbl.item(r, 7).text() if self.tbl.item(r, 7) else ""
+        QMessageBox.information(self, "Entidades", ents or "Sem entidades associadas")
 
     def save(self):
         eventos = []
@@ -256,9 +271,20 @@ class PageEventos(QWidget):
                 local = self.tbl.item(r, 4).text() if self.tbl.item(r, 4) else ""
                 era = self.tbl.item(r, 5).text() if self.tbl.item(r, 5) else ""
                 tags = [t.strip() for t in (self.tbl.item(r, 6).text() or "").split(",") if t.strip()]
+                ents = [e.strip() for e in (self.tbl.item(r, 7).text() or "").split(",") if e.strip()]
                 if era and (era not in eras_nomes):
                     raise ValueError(f"Era '{era}' não existe")
-                eventos.append(Evento(titulo, instante, tipo, importancia, local, "", era, tags))
+                eventos.append(Evento(
+                    titulo=titulo,
+                    instante=instante,
+                    tipo=tipo,
+                    importancia=importancia,
+                    local=local,
+                    descricao="",
+                    era=era,
+                    tags=tags,
+                    entidades=ents,
+                ))
             except Exception as err:
                 QMessageBox.critical(self, "Erro", f"Linha {r+1}: {err}")
                 return
@@ -350,6 +376,27 @@ class PageVisualizacao(QWidget):
         layout.addWidget(self.view, 1)
         layout.addWidget(self.btn_redraw)
         self.redraw()
+
+    def export_png(self, path: str):
+        """Exporta a cena atual como imagem PNG."""
+        rect = self.scene.sceneRect()
+        image = QImage(int(rect.width()), int(rect.height()), QImage.Format_ARGB32)
+        image.fill(Qt.transparent)
+        painter = QPainter(image)
+        self.scene.render(painter)
+        painter.end()
+        image.save(path, "PNG")
+
+    def export_svg(self, path: str):
+        """Exporta a cena atual como SVG vetorial."""
+        rect = self.scene.sceneRect()
+        generator = QSvgGenerator()
+        generator.setFileName(path)
+        generator.setSize(QSize(int(rect.width()), int(rect.height())))
+        generator.setViewBox(rect.toRect())
+        painter = QPainter(generator)
+        self.scene.render(painter)
+        painter.end()
 
     def _range_tempo(self):
         xs = []
@@ -502,6 +549,11 @@ class MainWindow(QMainWindow):
         act_imp = m.addAction("Importar (JSON)")
         act_imp.triggered.connect(self._importar)
         m.addSeparator()
+        act_png = m.addAction("Exportar visualização (PNG)")
+        act_png.triggered.connect(self._exportar_png)
+        act_svg = m.addAction("Exportar visualização (SVG)")
+        act_svg.triggered.connect(self._exportar_svg)
+        m.addSeparator()
         act_all = m.addAction("Exportar todas (JSON)")
         act_all.triggered.connect(self._exportar_todas)
 
@@ -595,6 +647,26 @@ class MainWindow(QMainWindow):
                 self.page_vis.redraw()
 
     # --- Export/Import ---
+    def _exportar_png(self):
+        i = self.idx_atual
+        if i < 0 or not hasattr(self, "page_vis"):
+            return
+        t = self.timelines[i]
+        path, _ = QFileDialog.getSaveFileName(self, "Exportar Visualização", f"{t.nome}.png", "PNG (*.png)")
+        if not path:
+            return
+        self.page_vis.export_png(path)
+
+    def _exportar_svg(self):
+        i = self.idx_atual
+        if i < 0 or not hasattr(self, "page_vis"):
+            return
+        t = self.timelines[i]
+        path, _ = QFileDialog.getSaveFileName(self, "Exportar Visualização", f"{t.nome}.svg", "SVG (*.svg)")
+        if not path:
+            return
+        self.page_vis.export_svg(path)
+
     def _exportar(self):
         i = self.idx_atual
         if i < 0: return
