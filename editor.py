@@ -24,6 +24,7 @@ from PyQt5.QtGui import (
     QFont,
     QTextDocument,
     QTextCursor,
+    QTextBlockFormat,
     QIcon,
     QStandardItem,
     QStandardItemModel,
@@ -82,6 +83,7 @@ from economico import MainWindow as EconomicoWindow
 from linha_do_tempo import MainWindow as LinhaDoTempoWindow
 from religioes_faccoes import MainWindow as ReligioesFaccoesWindow
 from cidades_planetas import MainWindow as CidadesPlanetasWindow
+from theme import apply_theme, THEMES as AVAILABLE_THEMES
 
 class FavoriteFileSystemModel(QFileSystemModel):
     """File system model that highlights favorite paths."""
@@ -607,7 +609,7 @@ class EditorWindow(QMainWindow):
         # Estado do documento
         self.current_file: Path | None = None
         self.dirty = False
-        self.dark_mode = bool(cfg.get("dark_mode", False))
+        self.theme = cfg.get("theme", "light")
 
         # Daily writing stats
         self.daily_word_goal = int(cfg.get("daily_word_goal", 0))
@@ -642,7 +644,10 @@ class EditorWindow(QMainWindow):
                     pass
             self.editor.setFont(f)
 
-        self._apply_theme(self.dark_mode)
+        line_spacing = float(cfg.get("line_spacing", 1.0))
+        self.set_line_spacing(line_spacing)
+
+        apply_theme(self.theme)
         self._connect_signals()
         self._update_stats()
 
@@ -906,34 +911,6 @@ class EditorWindow(QMainWindow):
                 selections.append(sel)
         self.editor.setExtraSelections(selections)
 
-    def _apply_theme(self, dark: bool):
-        """Tema literário: claro sépia e escuro de alto contraste suave."""
-        if dark:
-            bg = "#131417"  # fundo
-            panel = "#1a1c22"  # painéis
-            text = "#e6e6e6"  # texto principal
-            muted = "#9aa3ad"  # texto secundário
-            accent = "#86b7ff"  # destaque
-            border = "#2a2d36"
-        else:
-            bg = "#f5efe6"  # sépia claro
-            panel = "#fffaf2"  # painel quase branco
-            text = "#2b2a27"  # marrom grafite
-            muted = "#6a655d"  # marrom suave
-            accent = "#3b6fb6"  # azul editorial
-            border = "#e2d7c7"
-
-        self.setStyleSheet(f"""
-            QMainWindow {{ background: {bg}; color: {text}; }}
-            QToolBar {{ background: {panel}; border: 0; }}
-            QTreeView {{ background: {panel}; color: {text}; border-right: 1px solid {border}; }}
-            QPlainTextEdit {{ background: {panel}; color: {text}; selection-background-color: {accent}; }}
-            QStatusBar {{ background: {panel}; color: {text}; border-top: 1px solid {border}; }}
-            QLineEdit, QPushButton {{ background: {panel}; color: {text}; border: 1px solid {border}; padding: 4px 8px; }}
-            QPushButton:hover {{ border-color: {accent}; }}
-            QMenu {{ background: {panel}; color: {text}; border: 1px solid {border}; }}
-        """)
-
     def _build_actions(self):
         style = self.style()
         # Pasta de trabalho
@@ -951,7 +928,7 @@ class EditorWindow(QMainWindow):
         # Busca e tema
         self.act_find = QAction("Buscar (Ctrl+F)", self)
         self.act_global_find = QAction("Buscar no Workspace (Ctrl+Shift+F)", self)
-        self.act_toggle_theme = QAction("Alternar Tema Claro/Escuro", self)
+        self.act_toggle_theme = QAction("Alternar Tema", self)
         self.act_show_stats = QAction("Estatísticas…", self)
         self.act_start_pomodoro = QAction(style.standardIcon(QStyle.SP_MediaPlay), "Pomodoro (Ctrl+Alt+P)", self)
 
@@ -962,7 +939,7 @@ class EditorWindow(QMainWindow):
         self.act_focus_mode = QAction("Modo Foco", self)
         self.act_focus_mode.setCheckable(True)
         self.act_focus_mode.setShortcut(QKeySequence("F11"))
-        self.act_set_font = QAction("Configurar Fonte…", self)
+        self.act_set_font = QAction("Configurar Fonte e Espaçamento…", self)
         self.act_autosave_settings = QAction("Configurar Autosave…", self)
         self.act_set_daily_goal = QAction("Definir Meta Diária…", self)
         self.act_open_demografico = QAction("Construtor Demográfico Medieval…", self)
@@ -1062,14 +1039,37 @@ class EditorWindow(QMainWindow):
         self.find_bar.btn_prev.clicked.connect(lambda: self.find_next(False))
         self.find_bar.input.returnPressed.connect(lambda: self.find_next(True))
 
+    def set_line_spacing(self, spacing: float) -> None:
+        fmt = QTextBlockFormat()
+        fmt.setLineHeight(int(spacing * 100), QTextBlockFormat.ProportionalHeight)
+        cursor = self.editor.textCursor()
+        cursor.select(QTextCursor.Document)
+        cursor.mergeBlockFormat(fmt)
+        cursor.clearSelection()
+        self.editor.setTextCursor(cursor)
+        self.line_spacing = spacing
+
     def configure_font(self):
         font, ok = QFontDialog.getFont(self.editor.font(), self, "Escolher Fonte")
+        if not ok:
+            return
+        self.editor.setFont(font)
+        cfg = load_config()
+        cfg["font_family"] = font.family()
+        cfg["font_size"] = font.pointSize()
+        spacing, ok = QInputDialog.getDouble(
+            self,
+            "Espaçamento entre linhas",
+            "Múltiplo de espaçamento:",
+            float(cfg.get("line_spacing", 1.0)),
+            0.5,
+            3.0,
+            1,
+        )
         if ok:
-            self.editor.setFont(font)
-            cfg = load_config()
-            cfg["font_family"] = font.family()
-            cfg["font_size"] = font.pointSize()
-            save_config(cfg)
+            self.set_line_spacing(spacing)
+            cfg["line_spacing"] = spacing
+        save_config(cfg)
 
     def configure_autosave(self):
         interval, ok = QInputDialog.getInt(
@@ -1388,10 +1388,12 @@ class EditorWindow(QMainWindow):
             self.editor.find(pattern) if forward else self.editor.find(pattern, QTextDocument.FindBackward)  # type: ignore[name-defined]
 
     def toggle_theme(self):
-        self.dark_mode = not self.dark_mode
-        self._apply_theme(self.dark_mode)
+        order = list(AVAILABLE_THEMES.keys())
+        idx = order.index(self.theme)
+        self.theme = order[(idx + 1) % len(order)]
+        apply_theme(self.theme)
         cfg = load_config()
-        cfg["dark_mode"] = self.dark_mode
+        cfg["theme"] = self.theme
         save_config(cfg)
 
     def close_current_file(self):
@@ -1521,54 +1523,6 @@ class EditorWindow(QMainWindow):
                 parent = node.parent() or self.project_model.invisibleRootItem()
                 parent.removeRow(node.row())
 
-    def _apply_theme(self, dark: bool):
-        if dark:
-
-            # Tema escuro literário (contraste reduzido)
-            palette = {
-                "--bg": "#1e1e1e",
-                "--panel": "#252526",
-                "--text": "#dcdcdc",
-                "--muted": "#808080",
-                "--accent": "#569cd6",
-            }
-        else:
-            # Tema claro sépia
-            palette = {
-                "--bg": "#fdf6e3",
-                "--panel": "#fffaf0",
-                "--text": "#3e2f1c",
-                "--muted": "#8b7765",
-                "--accent": "#b58900",
-            }
-        self.setStyleSheet(
-            f"""
-        QMainWindow {{ background: {palette['--bg']}; color: {palette['--text']}; }}
-        QPlainTextEdit {{ background: {palette['--panel']}; color: {palette['--text']}; selection-background-color: {palette['--accent']}; }}
-        QTreeView {{ background: {palette['--panel']}; color: {palette['--text']}; }}
-        QStatusBar {{ background: {palette['--panel']}; color: {palette['--text']}; }}
-        QToolBar {{ background: {palette['--panel']}; }}
-        QLabel {{ color: {palette['--text']}; }}
-        QLineEdit {{ background: {palette['--panel']}; color: {palette['--text']}; border: 1px solid {palette['--muted']}; }}
-        QPushButton {{ background: {palette['--panel']}; color: {palette['--text']}; border: 1px solid {palette['--muted']}; padding: 4px 8px; }}
-        QPushButton:hover {{ border-color: {palette['--accent']}; }}
-        """
-        )
-        # Aplica via stylesheet simples
-        self.setStyleSheet(
-            f"""
-            QMainWindow {{ background: {palette['--bg']}; color: {palette['--text']}; }}
-            QToolBar {{ background: {palette['--panel']}; border: 0; }}
-            QTreeView {{ background: {palette['--panel']}; color: {palette['--text']}; border-right: 1px solid rgba(0,0,0,0.1); }}
-            QPlainTextEdit {{ background: {palette['--panel']}; color: {palette['--text']}; selection-background-color: {palette['--accent']}; }}
-            QStatusBar {{ background: {palette['--panel']}; color: {palette['--text']}; }}
-            QLineEdit {{ background: {palette['--panel']}; color: {palette['--text']}; border: 1px solid rgba(0,0,0,0.25); padding: 4px; }}
-            QPushButton {{ background: {palette['--panel']}; color: {palette['--text']}; border: 1px solid rgba(0,0,0,0.25); padding: 4px 8px; }}
-            QPushButton:hover {{ border-color: {palette['--accent']}; }}
-            QMenu {{ background: {palette['--panel']}; color: {palette['--text']}; }}
-            """
-        )
-
     def open_file(self, file_path: Path):
         try:
             text = read_file_text(file_path)
@@ -1586,6 +1540,7 @@ class EditorWindow(QMainWindow):
         stats = compute_stats(text)
         self.last_word_count = stats["words"]
         self.editor.setPlainText(text)
+        self.set_line_spacing(getattr(self, "line_spacing", 1.0))
         self.editor.setFocus()
         self.dirty = False
         self.setWindowTitle(title)
@@ -1692,9 +1647,10 @@ class EditorWindow(QMainWindow):
         # salva config
         cfg = load_config()
         cfg["workspace"] = str(self.workspace)
-        cfg["dark_mode"] = self.dark_mode
+        cfg["theme"] = self.theme
         cfg["favorites"] = list(self.favorites)
         cfg["shortcuts"] = self.shortcuts
+        cfg["line_spacing"] = getattr(self, "line_spacing", 1.0)
         save_config(cfg)
         event.accept()
 
