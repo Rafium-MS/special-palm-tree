@@ -30,6 +30,7 @@ import sys
 import json
 import shutil
 import re
+from datetime import datetime
 from pathlib import Path
 
 from PyQt5.QtCore import (
@@ -91,6 +92,8 @@ APP_NAME = "Editor de Textos"
 DEFAULT_WORKSPACE = Path.cwd() / "workspace"
 CONFIG_FILE = Path.cwd() / ".editor_config.json"
 AUTOSAVE_DIRNAME = ".autosave"
+HISTORY_DIRNAME = ".history"
+MAX_SNAPSHOTS = 5
 SUPPORTED_TEXT_EXTS = {".txt", ".md", ".markdown", ".json", ".yaml", ".yml", ".ini", ".cfg", ".csv"}
 
 
@@ -504,6 +507,8 @@ class EditorWindow(QMainWindow):
         self._build_actions()
         menu_tools = self.menuBar().addMenu("Ferramentas")
         menu_tools.addAction(self.act_show_stats)
+        self.menu_history = self.menuBar().addMenu("Histórico de versões")
+        self.menu_history.aboutToShow.connect(self._populate_history_menu)
 
         self.find_bar = FindBar(self)
         root.addWidget(self.find_bar)
@@ -889,6 +894,7 @@ class EditorWindow(QMainWindow):
         try:
             text = self.editor.toPlainText()
             self.current_file.write_text(text, encoding="utf-8")
+            self.save_snapshot()
             self.dirty = False
             self.statusBar().showMessage("Salvo.", 2000)
         except Exception as e:
@@ -1196,19 +1202,85 @@ class EditorWindow(QMainWindow):
             return not self.dirty
         return resp != QMessageBox.Cancel
 
-    def autosave(self):
-        if not self.autosave_enabled or not self.dirty:
-            return
+    def save_snapshot(self):
         if not self.current_file:
             return
-        autosave_dir = self.workspace / AUTOSAVE_DIRNAME
-        ensure_dir(autosave_dir)
-        backup_path = autosave_dir / (self.current_file.name + ".bak")
+        history_dir = self.workspace / HISTORY_DIRNAME / self.current_file.name
+        ensure_dir(history_dir)
+        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        snap_path = history_dir / f"{timestamp}.bak"
+        text = self.editor.toPlainText()
         try:
-            backup_path.write_text(self.editor.toPlainText(), encoding="utf-8")
-            self.statusBar().showMessage("Autosave concluído.", 1500)
+            snap_path.write_text(text, encoding="utf-8")
+        except Exception:
+            return
+        meta_file = history_dir / "meta.json"
+        try:
+            data = json.loads(meta_file.read_text(encoding="utf-8")) if meta_file.exists() else []
+        except Exception:
+            data = []
+        data.append({"timestamp": timestamp, "size": len(text)})
+        while len(data) > MAX_SNAPSHOTS:
+            old = data.pop(0)
+            old_path = history_dir / f"{old['timestamp']}.bak"
+            if old_path.exists():
+                try:
+                    old_path.unlink()
+                except Exception:
+                    pass
+        try:
+            meta_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
         except Exception:
             pass
+
+    def autosave(self):
+        if not self.autosave_enabled or not self.dirty or not self.current_file:
+            return
+        self.save_snapshot()
+        self.statusBar().showMessage("Autosave concluído.", 1500)
+
+    def _populate_history_menu(self):
+        self.menu_history.clear()
+        if not self.current_file:
+            act = self.menu_history.addAction("Nenhum arquivo aberto")
+            act.setEnabled(False)
+            return
+        history_dir = self.workspace / HISTORY_DIRNAME / self.current_file.name
+        meta_file = history_dir / "meta.json"
+        if not meta_file.exists():
+            act = self.menu_history.addAction("Sem versões")
+            act.setEnabled(False)
+            return
+        try:
+            data = json.loads(meta_file.read_text(encoding="utf-8"))
+        except Exception:
+            act = self.menu_history.addAction("Erro ao ler histórico")
+            act.setEnabled(False)
+            return
+        for entry in reversed(data):
+            ts = entry.get("timestamp")
+            size = entry.get("size", 0)
+            try:
+                dt = datetime.strptime(ts, "%Y%m%d%H%M%S").strftime("%Y-%m-%d %H:%M:%S")
+            except Exception:
+                dt = ts
+            act = self.menu_history.addAction(f"{dt} ({size} bytes)")
+            act.triggered.connect(lambda _, t=ts: self.restore_snapshot(t))
+
+    def restore_snapshot(self, timestamp: str):
+        if not self.current_file:
+            return
+        history_dir = self.workspace / HISTORY_DIRNAME / self.current_file.name
+        snap_path = history_dir / f"{timestamp}.bak"
+        if not snap_path.exists():
+            return
+        try:
+            text = snap_path.read_text(encoding="utf-8")
+        except Exception:
+            return
+        self.editor.setPlainText(text)
+        self.dirty = True
+        self.statusBar().showMessage("Versão restaurada. Salve para manter.", 2000)
 
     # Eventos -------------------------------------------------------------
     def closeEvent(self, event: QCloseEvent):
