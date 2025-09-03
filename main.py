@@ -88,6 +88,7 @@ from PyQt5.QtWidgets import (
     QDialog,
     QListWidgetItem,
     QFontDialog,
+    QProgressBar,
 )
 from PyQt5.QtPrintSupport import QPrinter
 
@@ -126,10 +127,15 @@ def ensure_dir(p: Path):
 def load_config():
     if CONFIG_FILE.exists():
         try:
-            return json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+            cfg = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
         except Exception:
-            return {}
-    return {}
+            cfg = {}
+    else:
+        cfg = {}
+
+    # Ensure default config values
+    cfg.setdefault("daily_word_goal", 0)
+    return cfg
 
 
 def save_config(cfg: dict):
@@ -637,6 +643,12 @@ class EditorWindow(QMainWindow):
         self.dirty = False
         self.dark_mode = bool(cfg.get("dark_mode", False))
 
+        # Daily writing stats
+        self.daily_word_goal = int(cfg.get("daily_word_goal", 0))
+        self.daily_words_written = 0
+        self.last_word_count = 0
+        self.stats_date = datetime.now().date()
+
         # Autosave
         self.autosave_enabled = True
         self.autosave_interval = int(cfg.get("autosave_interval", 30_000))
@@ -666,6 +678,7 @@ class EditorWindow(QMainWindow):
 
         self._apply_theme(self.dark_mode)
         self._connect_signals()
+        self._update_stats()
 
     # UI ------------------------------------------------------------------
     def _build_ui(self):
@@ -685,6 +698,7 @@ class EditorWindow(QMainWindow):
         menu_tools.addSeparator()
         menu_tools.addAction(self.act_set_font)
         menu_tools.addAction(self.act_autosave_settings)
+        menu_tools.addAction(self.act_set_daily_goal)
         self.menu_history = self.menuBar().addMenu("Histórico de versões")
         self.menu_history.aboutToShow.connect(self._populate_history_menu)
 
@@ -780,6 +794,12 @@ class EditorWindow(QMainWindow):
         self.lbl_stats = QLabel("0 palavras • 0 caracteres • 0 min")
         sb.addWidget(self.lbl_path, 1)
         sb.addPermanentWidget(self.lbl_stats)
+        self.progress = QProgressBar(self)
+        self.progress.setMaximumWidth(150)
+        self.progress.setTextVisible(True)
+        self.progress.setFormat("%v/%m")
+        self.progress.setRange(0, max(self.daily_word_goal, 1))
+        sb.addPermanentWidget(self.progress)
         self.setStatusBar(sb)
 
         self.setCentralWidget(central)
@@ -787,6 +807,18 @@ class EditorWindow(QMainWindow):
     def _update_stats(self):
         stats = compute_stats(self.editor.toPlainText())
         self.current_stats = stats
+
+        # Daily word tracking
+        today = datetime.now().date()
+        if today != self.stats_date:
+            self.stats_date = today
+            self.daily_words_written = 0
+            self.last_word_count = stats["words"]
+        delta = stats["words"] - self.last_word_count
+        if delta > 0:
+            self.daily_words_written += delta
+        self.last_word_count = stats["words"]
+
         if hasattr(self, "lbl_stats"):
             rt = f"{stats['reading_time']:.1f} min"
             label = f"{stats['words']} palavras • {stats['characters']} caracteres • {rt}"
@@ -794,6 +826,16 @@ class EditorWindow(QMainWindow):
                 top = ", ".join(w for w, _ in stats["top_words"][:3])
                 label += f" • {top}"
             self.lbl_stats.setText(label)
+
+        if hasattr(self, "progress"):
+            if self.daily_word_goal:
+                self.progress.setRange(0, self.daily_word_goal)
+                self.progress.setValue(min(self.daily_words_written, self.daily_word_goal))
+                self.progress.setFormat(f"{self.daily_words_written}/{self.daily_word_goal}")
+            else:
+                self.progress.setRange(0, max(self.daily_words_written, 1))
+                self.progress.setValue(self.daily_words_written)
+                self.progress.setFormat(str(self.daily_words_written))
 
     def _update_preview(self):
         text = self.editor.toPlainText()
@@ -900,6 +942,7 @@ class EditorWindow(QMainWindow):
         self.act_focus_mode.setShortcut(QKeySequence("F11"))
         self.act_set_font = QAction("Configurar Fonte…", self)
         self.act_autosave_settings = QAction("Configurar Autosave…", self)
+        self.act_set_daily_goal = QAction("Definir Meta Diária…", self)
 
         # Sair
         self.act_close_tab = QAction("Fechar Arquivo (Ctrl+W)", self)
@@ -974,6 +1017,7 @@ class EditorWindow(QMainWindow):
         self.act_focus_mode.triggered.connect(self.toggle_focus_mode)
         self.act_set_font.triggered.connect(self.configure_font)
         self.act_autosave_settings.triggered.connect(self.configure_autosave)
+        self.act_set_daily_goal.triggered.connect(self.configure_daily_goal)
 
         self.find_bar.btn_close.clicked.connect(lambda: self.find_bar.setVisible(False))
         self.find_bar.btn_next.clicked.connect(lambda: self.find_next(True))
@@ -1013,6 +1057,25 @@ class EditorWindow(QMainWindow):
         cfg["autosave_interval"] = self.autosave_interval
         cfg["autosave_dir"] = dir_path
         save_config(cfg)
+
+    def configure_daily_goal(self):
+        cfg = load_config()
+        current = int(cfg.get("daily_word_goal", self.daily_word_goal))
+        goal, ok = QInputDialog.getInt(
+            self,
+            "Meta diária de palavras",
+            "Número de palavras por dia:",
+            current,
+            0,
+            100000,
+        )
+        if ok:
+            self.daily_word_goal = goal
+            cfg["daily_word_goal"] = goal
+            save_config(cfg)
+            if hasattr(self, "progress"):
+                self.progress.setRange(0, max(goal, 1))
+            self._update_stats()
 
     def toggle_sidebar(self, checked=None):
         if checked is None:
@@ -1482,6 +1545,8 @@ class EditorWindow(QMainWindow):
         else:
             self.current_file = file_path
             title = f"{APP_NAME} — {file_path.name}"
+        stats = compute_stats(text)
+        self.last_word_count = stats["words"]
         self.editor.setPlainText(text)
         self.editor.setFocus()
         self.dirty = False
