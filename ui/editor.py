@@ -87,6 +87,7 @@ from .religioes_faccoes import MainWindow as ReligioesFaccoesWindow
 from .cidades_planetas import MainWindow as CidadesPlanetasWindow
 from .theme import apply_theme, load_theme, THEMES as AVAILABLE_THEMES
 from icons import icon
+from core.timeline.service import timeline_service
 
 class FavoriteFileSystemModel(QFileSystemModel):
     """File system model that highlights favorite paths."""
@@ -426,6 +427,16 @@ class SpellPlainTextEdit(QPlainTextEdit):
                 act.triggered.connect(
                     lambda _, c=QTextCursor(cursor), w=s: self._replace_word(c, w)
                 )
+        # opção de criação rápida de evento
+        selection = self.textCursor().selectedText()
+        m = re.search(r"(-?\d+)", selection)
+        if selection and m:
+            menu.addSeparator()
+            act = menu.addAction("Adicionar à Linha do Tempo")
+            date = int(m.group(1))
+            snippet = selection
+            act.triggered.connect(lambda: timeline_service.quick_create(date, snippet))
+
         menu.exec_(event.globalPos())
 
     def _replace_word(self, cursor, new_word):
