@@ -18,7 +18,7 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QSplitter, QListWidget, QListWidgetItem,
     QStackedWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel, QComboBox,
     QPushButton, QSpinBox, QDoubleSpinBox, QGroupBox, QCheckBox, QTableWidget,
-    QTableWidgetItem, QAbstractItemView, QFrame, QSlider, QFileDialog
+    QTableWidgetItem, QAbstractItemView, QFrame, QSlider, QFileDialog, QLineEdit
 )
 import sys
 import random
@@ -31,6 +31,11 @@ class AssentamentoState:
     habitantes: int = 500
     densidade_urbana: float = 0.25  # 25% urbano por padrão
     distribuicao_rural: float = 0.75
+
+    tamanho: float = 10.0  # km² aproximados
+    economia_base: str = "agricultura"
+    regime: str = "monarquia"
+    taxa_urbanizacao: float = 0.25
 
     bioma: str = "planície"
     recursos: List[str] = field(default_factory=lambda: ["madeira", "alimentos"]) 
@@ -103,6 +108,26 @@ def simular_ano(state: AssentamentoState) -> float:
     return float(state.habitantes)
 
 
+def export_structured(state: AssentamentoState) -> Dict[str, object]:
+    """Exporta o estado em um dicionário compatível com ``cidades_planetas``."""
+    urbano = int(state.habitantes * state.taxa_urbanizacao)
+    rural = state.habitantes - urbano
+    return {
+        "nome": state.tipo,
+        "tipo": "Cidade",
+        "populacao": state.habitantes,
+        "bioma": state.bioma,
+        "clima": "temperado",
+        "recursos": state.recursos,
+        "arquitetura": "",
+        "governo": state.regime,
+        "economia": state.economia_base,
+        "notas": f"Tamanho: {state.tamanho} km². Urbano: {urbano}. Rural: {rural}",
+        "distritos": [],
+        "pontos_interesse": [],
+    }
+
+
 # ----------------------------- Páginas -----------------------------
 class PaginaTipo(QWidget):
     def __init__(self, state: AssentamentoState, on_apply):
@@ -153,6 +178,7 @@ class PaginaTipo(QWidget):
         self.state.tipo = tipo
         self.state.habitantes = p.get("habitantes", self.state.habitantes)
         self.state.densidade_urbana = p.get("densidade_urbana", self.state.densidade_urbana)
+        self.state.taxa_urbanizacao = self.state.densidade_urbana
         self.state.distribuicao_rural = 1 - self.state.densidade_urbana
         self.state.expectativa_vida = p.get("expectativa_vida", self.state.expectativa_vida)
         self.on_apply()
@@ -199,10 +225,22 @@ class PaginaCenario(QWidget):
         dem_form.addRow("Taxa de Mortalidade (\u2030):", self.dbl_mortal)
         box_dem.setLayout(dem_form)
 
+        # Tamanho e aspectos sociais
+        box_soc = QGroupBox("Estrutura Social")
+        soc_form = QFormLayout()
+        self.sp_tamanho = QDoubleSpinBox(); self.sp_tamanho.setRange(0.1, 1000000.0); self.sp_tamanho.setValue(self.state.tamanho)
+        self.ed_econ = QLineEdit(self.state.economia_base)
+        self.ed_regime = QLineEdit(self.state.regime)
+        soc_form.addRow("Tamanho (km²):", self.sp_tamanho)
+        soc_form.addRow("Economia Base:", self.ed_econ)
+        soc_form.addRow("Regime:", self.ed_regime)
+        box_soc.setLayout(soc_form)
+
         top = QHBoxLayout()
         top.addWidget(box_amb)
         top.addWidget(box_rec)
         layout.addLayout(top)
+        layout.addWidget(box_soc)
         layout.addWidget(box_dem)
 
         btn = QPushButton("Gerar Estrutura Inicial")
@@ -220,6 +258,9 @@ class PaginaCenario(QWidget):
         self.state.expectativa_vida = self.spin_expect.value()
         self.state.taxa_natalidade = self.dbl_natal.value()
         self.state.taxa_mortalidade = self.dbl_mortal.value()
+        self.state.tamanho = self.sp_tamanho.value()
+        self.state.economia_base = self.ed_econ.text().strip()
+        self.state.regime = self.ed_regime.text().strip()
         self.on_apply()
 
 
@@ -259,8 +300,8 @@ class PaginaClasses(QWidget):
         box_ur = QGroupBox("Distribuição Urbana x Rural")
         h = QHBoxLayout()
         self.sld_urbano = QSlider(Qt.Horizontal); self.sld_urbano.setRange(0, 100)
-        self.sld_urbano.setValue(int(self.state.densidade_urbana * 100))
-        self.lbl_urb = QLabel(f"Urbano: {int(self.state.densidade_urbana*100)}%  |  Rural: {int((1-self.state.densidade_urbana)*100)}%")
+        self.sld_urbano.setValue(int(self.state.taxa_urbanizacao * 100))
+        self.lbl_urb = QLabel(f"Urbano: {int(self.state.taxa_urbanizacao*100)}%  |  Rural: {int((1-self.state.taxa_urbanizacao)*100)}%")
         h.addWidget(self.sld_urbano)
         h.addWidget(self.lbl_urb)
         box_ur.setLayout(h)
@@ -287,8 +328,9 @@ class PaginaClasses(QWidget):
         self.state.comerciantes = int(self.tbl.item(4,1).text())
         self.state.mineradores  = int(self.tbl.item(5,1).text())
         # urbano/rural
-        self.state.densidade_urbana = self.sld_urbano.value()/100.0
-        self.state.distribuicao_rural = 1 - self.state.densidade_urbana
+        self.state.taxa_urbanizacao = self.sld_urbano.value()/100.0
+        self.state.densidade_urbana = self.state.taxa_urbanizacao
+        self.state.distribuicao_rural = 1 - self.state.taxa_urbanizacao
         self.on_apply()
 
 
@@ -404,14 +446,17 @@ class PaginaResultados(QWidget):
         self.tbl.setEditTriggers(QAbstractItemView.NoEditTriggers)
         layout.addWidget(self.tbl)
 
-        # Botões de export (desconectados – wireframe)
+        # Botões de export
         btns = QHBoxLayout()
         self.btn_export_csv = QPushButton("Exportar CSV")
         self.btn_export_csv.clicked.connect(self.export_csv)
         self.btn_export_pdf = QPushButton("Exportar PDF (placeholder)")
+        self.btn_send_cp = QPushButton("Enviar para Cidades/Planetas")
+        self.btn_send_cp.clicked.connect(self.send_to_cp)
         btns.addStretch(1)
         btns.addWidget(self.btn_export_csv)
         btns.addWidget(self.btn_export_pdf)
+        btns.addWidget(self.btn_send_cp)
         layout.addLayout(btns)
 
         self.refresh()
@@ -426,14 +471,19 @@ class PaginaResultados(QWidget):
         s = self.state
         add_row("Tipo", s.tipo)
         add_row("População Total", s.habitantes)
-        add_row("Urbano (%)", int(s.densidade_urbana * 100))
-        add_row("Rural (%)", int((1-s.densidade_urbana) * 100))
+        urb = int(s.habitantes * s.taxa_urbanizacao)
+        add_row("População Urbana", urb)
+        add_row("População Rural", s.habitantes - urb)
+        add_row("Taxa de Urbanização (%)", int(s.taxa_urbanizacao * 100))
         add_row("Expectativa de Vida", s.expectativa_vida)
         add_row("Natalidade (‰)", s.taxa_natalidade)
         add_row("Mortalidade (‰)", s.taxa_mortalidade)
         add_row("Nascimentos (simulados)", round(calcular_nascimentos(s), 2))
         add_row("Mortes (simuladas)", round(calcular_mortes(s), 2))
         add_row("Recursos", ", ".join(s.recursos) if s.recursos else "—")
+        add_row("Tamanho (km²)", s.tamanho)
+        add_row("Economia Base", s.economia_base)
+        add_row("Regime", s.regime)
 
         # classes sociais
         add_row("Nobreza", s.nobreza)
@@ -464,6 +514,14 @@ class PaginaResultados(QWidget):
                 k = self.tbl.item(r, 0).text()
                 v = self.tbl.item(r, 1).text()
                 f.write(f"{k};{v}\n")
+
+    def send_to_cp(self):
+        from ui.cidades_planetas import MainWindow as CPWindow, Localidade
+        data = export_structured(self.state)
+        self._cp_win = CPWindow()
+        self._cp_win.localidades.append(Localidade(**data))
+        self._cp_win._refresh_lista()
+        self._cp_win.show()
 
 
 # ----------------------------- Janela principal -----------------------------
