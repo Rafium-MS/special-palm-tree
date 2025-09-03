@@ -16,8 +16,11 @@ Recursos:
 - Contador de palavras e caracteres
 - Barra de busca (Ctrl+F) com próximo/anterior
 - Tema claro/escuro (toggle)
-- Atalhos: Ctrl+N, Ctrl+S, Ctrl+Shift+S, Ctrl+F, Ctrl+W
+- Atalhos configuráveis via JSON (padrão: Ctrl+N, Ctrl+S, Ctrl+Shift+S, Ctrl+F, Ctrl+W)
 - Confirma saída/alteração sem salvar
+- Barra lateral colapsável
+- Modo foco/tela cheia ocultando menus e árvore
+- Área de anotações na lateral
 
 Requisitos: PyQt5
 pip install PyQt5
@@ -467,6 +470,8 @@ class EditorWindow(QMainWindow):
 
         self.favorites: set[str] = set(cfg.get("favorites", []))
         self.tags: dict[str, list[str]] = cfg.get("tags", {})
+        self.shortcuts: dict[str, str] = cfg.get("shortcuts", {})
+        self.focus_mode = False
         self.icon_favorite = QIcon.fromTheme("star")
         if self.icon_favorite.isNull():
             self.icon_favorite = self.style().standardIcon(QStyle.SP_DialogYesButton)
@@ -507,6 +512,8 @@ class EditorWindow(QMainWindow):
         self._build_actions()
         menu_tools = self.menuBar().addMenu("Ferramentas")
         menu_tools.addAction(self.act_show_stats)
+        menu_tools.addAction(self.act_toggle_sidebar)
+        menu_tools.addAction(self.act_focus_mode)
         self.menu_history = self.menuBar().addMenu("Histórico de versões")
         self.menu_history.aboutToShow.connect(self._populate_history_menu)
 
@@ -552,6 +559,7 @@ class EditorWindow(QMainWindow):
         btn_clear_tags.clicked.connect(lambda: self.filter_tree_by_tag(""))
 
         tree_container = QWidget(self)
+        self.tree_container = tree_container
         tree_layout = QVBoxLayout(tree_container)
         tree_layout.setContentsMargins(0, 0, 0, 0)
         tree_layout.setSpacing(0)
@@ -583,6 +591,10 @@ class EditorWindow(QMainWindow):
 
         editor_splitter.addWidget(self.editor)
         editor_splitter.addWidget(self.preview)
+        self.notes = QPlainTextEdit(self)
+        self.notes.setPlaceholderText("Anotações…")
+        self.notes.setMinimumWidth(150)
+        editor_splitter.addWidget(self.notes)
         editor_splitter.setStretchFactor(0, 1)
 
         tree_splitter.addWidget(tree_container)
@@ -711,6 +723,14 @@ class EditorWindow(QMainWindow):
         self.act_toggle_theme = QAction("Alternar Tema Claro/Escuro", self)
         self.act_show_stats = QAction("Estatísticas…", self)
 
+        # Interface
+        self.act_toggle_sidebar = QAction("Alternar Barra Lateral", self)
+        self.act_toggle_sidebar.setCheckable(True)
+        self.act_toggle_sidebar.setChecked(True)
+        self.act_focus_mode = QAction("Modo Foco", self)
+        self.act_focus_mode.setCheckable(True)
+        self.act_focus_mode.setShortcut(QKeySequence("F11"))
+
         # Sair
         self.act_close_tab = QAction("Fechar Arquivo (Ctrl+W)", self)
 
@@ -721,6 +741,7 @@ class EditorWindow(QMainWindow):
         self.act_find.setShortcut(QKeySequence.Find)
         self.act_global_find.setShortcut(QKeySequence("Ctrl+Shift+F"))
         self.act_close_tab.setShortcut(QKeySequence.Close)
+        self.act_toggle_sidebar.setShortcut(QKeySequence("F9"))
 
         # Add to toolbar
         self.toolbar.addAction(self.act_choose_workspace)
@@ -733,9 +754,30 @@ class EditorWindow(QMainWindow):
         self.toolbar.addAction(self.act_find)
         self.toolbar.addAction(self.act_global_find)
         self.toolbar.addAction(self.act_toggle_theme)
+        self.toolbar.addAction(self.act_toggle_sidebar)
+        self.toolbar.addAction(self.act_focus_mode)
         self.toolbar.addSeparator()
         self.toolbar.addAction(self.act_open_in_explorer)
         self.toolbar.addAction(self.act_show_stats)
+
+        self._apply_shortcuts()
+
+    def _apply_shortcuts(self):
+        mapping = {
+            "new_file": self.act_new_file,
+            "save": self.act_save,
+            "save_as": self.act_save_as,
+            "find": self.act_find,
+            "global_find": self.act_global_find,
+            "toggle_theme": self.act_toggle_theme,
+            "close_file": self.act_close_tab,
+            "toggle_sidebar": self.act_toggle_sidebar,
+            "focus_mode": self.act_focus_mode,
+        }
+        for name, seq in self.shortcuts.items():
+            act = mapping.get(name)
+            if act:
+                act.setShortcut(QKeySequence(seq))
 
     def _connect_signals(self):
         self.editor.textChanged.connect(self._on_text_changed)
@@ -758,12 +800,38 @@ class EditorWindow(QMainWindow):
         self.act_toggle_theme.triggered.connect(self.toggle_theme)
         self.act_close_tab.triggered.connect(self.close_current_file)
         self.act_show_stats.triggered.connect(self.show_stats_dialog)
+        self.act_toggle_sidebar.triggered.connect(self.toggle_sidebar)
+        self.act_focus_mode.triggered.connect(self.toggle_focus_mode)
 
         self.find_bar.btn_close.clicked.connect(lambda: self.find_bar.setVisible(False))
         self.find_bar.btn_next.clicked.connect(lambda: self.find_next(True))
         self.find_bar.btn_prev.clicked.connect(lambda: self.find_next(False))
         self.find_bar.input.returnPressed.connect(lambda: self.find_next(True))
-        
+
+    def toggle_sidebar(self, checked=None):
+        if checked is None:
+            checked = not self.tree_container.isVisible()
+        self.tree_container.setVisible(checked)
+        self.act_toggle_sidebar.setChecked(checked)
+
+    def toggle_focus_mode(self, checked=None):
+        if checked is None:
+            checked = not self.focus_mode
+        self.focus_mode = checked
+        if checked:
+            self._sidebar_was_visible = self.tree_container.isVisible()
+            self.toolbar.setVisible(False)
+            self.menuBar().setVisible(False)
+            self.tree_container.setVisible(False)
+            self.showFullScreen()
+        else:
+            self.toolbar.setVisible(True)
+            self.menuBar().setVisible(True)
+            self.tree_container.setVisible(getattr(self, '_sidebar_was_visible', True))
+            self.showNormal()
+        self.act_focus_mode.setChecked(checked)
+        self.act_toggle_sidebar.setChecked(self.tree_container.isVisible())
+
     # Favoritos -----------------------------------------------------------
     def _refresh_favorites_view(self):
         self.fav_model.clear()
@@ -1292,6 +1360,7 @@ class EditorWindow(QMainWindow):
         cfg["workspace"] = str(self.workspace)
         cfg["dark_mode"] = self.dark_mode
         cfg["favorites"] = list(self.favorites)
+        cfg["shortcuts"] = self.shortcuts
         save_config(cfg)
         event.accept()
 
