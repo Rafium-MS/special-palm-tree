@@ -78,6 +78,10 @@ from utils import (
 )
 from demografico_medieval import MainWindow as DemograficoWindow
 from personagens import MainWindow as PersonagensWindow
+from economico import MainWindow as EconomicoWindow
+from linha_do_tempo import MainWindow as LinhaDoTempoWindow
+from religioes_faccoes import MainWindow as ReligioesFaccoesWindow
+from cidades_planetas import MainWindow as CidadesPlanetasWindow
 
 class FavoriteFileSystemModel(QFileSystemModel):
     """File system model that highlights favorite paths."""
@@ -664,6 +668,10 @@ class EditorWindow(QMainWindow):
         menu_tools.addSeparator()
         menu_tools.addAction(self.act_open_demografico)
         menu_tools.addAction(self.act_open_personagens)
+        menu_tools.addAction(self.act_open_economico)
+        menu_tools.addAction(self.act_open_linha_tempo)
+        menu_tools.addAction(self.act_open_religioes)
+        menu_tools.addAction(self.act_open_cidades_planetas)
         self.menu_history = self.menuBar().addMenu("Histórico de versões")
         self.menu_history.aboutToShow.connect(self._populate_history_menu)
 
@@ -848,6 +856,34 @@ class EditorWindow(QMainWindow):
         self.personagens_window.raise_()
         self.personagens_window.activateWindow()
 
+    def open_economico(self):
+        if not hasattr(self, "economico_window"):
+            self.economico_window = EconomicoWindow()
+        self.economico_window.show()
+        self.economico_window.raise_()
+        self.economico_window.activateWindow()
+
+    def open_linha_do_tempo(self):
+        if not hasattr(self, "linha_tempo_window"):
+            self.linha_tempo_window = LinhaDoTempoWindow()
+        self.linha_tempo_window.show()
+        self.linha_tempo_window.raise_()
+        self.linha_tempo_window.activateWindow()
+
+    def open_religioes_faccoes(self):
+        if not hasattr(self, "religioes_window"):
+            self.religioes_window = ReligioesFaccoesWindow()
+        self.religioes_window.show()
+        self.religioes_window.raise_()
+        self.religioes_window.activateWindow()
+
+    def open_cidades_planetas(self):
+        if not hasattr(self, "cidades_window"):
+            self.cidades_window = CidadesPlanetasWindow()
+        self.cidades_window.show()
+        self.cidades_window.raise_()
+        self.cidades_window.activateWindow()
+
     def check_spelling(self):
         text = self.editor.toPlainText()
         words = re.findall(r"\b\w+\b", text.lower())
@@ -931,6 +967,10 @@ class EditorWindow(QMainWindow):
         self.act_set_daily_goal = QAction("Definir Meta Diária…", self)
         self.act_open_demografico = QAction("Construtor Demográfico Medieval…", self)
         self.act_open_personagens = QAction("Gerenciador de Personagens…", self)
+        self.act_open_economico = QAction("Construtor Econômico…", self)
+        self.act_open_linha_tempo = QAction("Construtor de Linha do Tempo…", self)
+        self.act_open_religioes = QAction("Gerenciador de Religiões e Facções…", self)
+        self.act_open_cidades_planetas = QAction("Construtor de Cidades/Planetas…", self)
 
         # Sair
         self.act_close_tab = QAction("Fechar Arquivo (Ctrl+W)", self)
@@ -1012,6 +1052,10 @@ class EditorWindow(QMainWindow):
         self.act_set_daily_goal.triggered.connect(self.configure_daily_goal)
         self.act_open_demografico.triggered.connect(self.open_demografico_medieval)
         self.act_open_personagens.triggered.connect(self.open_personagens)
+        self.act_open_economico.triggered.connect(self.open_economico)
+        self.act_open_linha_tempo.triggered.connect(self.open_linha_do_tempo)
+        self.act_open_religioes.triggered.connect(self.open_religioes_faccoes)
+        self.act_open_cidades_planetas.triggered.connect(self.open_cidades_planetas)
 
         self.find_bar.btn_close.clicked.connect(lambda: self.find_bar.setVisible(False))
         self.find_bar.btn_next.clicked.connect(lambda: self.find_next(True))
