@@ -458,7 +458,7 @@ class PageResumo(QWidget):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Construtor de Personagens – Wireframe")
+        self.setWindowTitle("Construtor de Personagens")
         self.resize(1200, 720)
 
         # lista de personagens em memória e índice atual
