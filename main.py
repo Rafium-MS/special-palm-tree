@@ -215,6 +215,120 @@ class FavoriteFileSystemModel(QFileSystemModel):
         return super().data(index, role)
 
 
+class ProjectNode(QStandardItem):
+    """Node representing a book, chapter or scene."""
+
+    def __init__(self, name: str, path: Path, node_type: str):
+        super().__init__(name)
+        self.path = Path(path)
+        self.node_type = node_type
+        self.setEditable(False)
+
+
+class ProjectTreeModel(QStandardItemModel):
+    """Tree model organizing books, chapters and scenes."""
+
+    def __init__(self, root_path: Path, favorites: set[str], parent=None):
+        super().__init__(parent)
+        self.root_path = Path(root_path)
+        self.favorites = favorites
+        self.favorite_icon = QIcon.fromTheme("star")
+        if self.favorite_icon.isNull():
+            self.favorite_icon = QApplication.style().standardIcon(QStyle.SP_DialogYesButton)
+        self.load_project()
+
+    def _set_icon(self, item: ProjectNode):
+        if str(item.path) in self.favorites:
+            item.setIcon(self.favorite_icon)
+        else:
+            item.setIcon(QIcon())
+
+    def load_project(self):
+        self.clear()
+        self.setHorizontalHeaderLabels(["Projeto"])
+        root = self.invisibleRootItem()
+        if not self.root_path.exists():
+            return
+        for book_dir in sorted(self.root_path.iterdir()):
+            if not book_dir.is_dir():
+                continue
+            book_item = ProjectNode(book_dir.name, book_dir, "book")
+            self._set_icon(book_item)
+            root.appendRow(book_item)
+            for chapter_dir in sorted(book_dir.iterdir()):
+                if not chapter_dir.is_dir():
+                    continue
+                chap_item = ProjectNode(chapter_dir.name, chapter_dir, "chapter")
+                self._set_icon(chap_item)
+                book_item.appendRow(chap_item)
+                for scene_file in sorted(chapter_dir.glob("*.txt")):
+                    scene_item = ProjectNode(scene_file.stem, scene_file, "scene")
+                    self._set_icon(scene_item)
+                    chap_item.appendRow(scene_item)
+
+    def node_from_index(self, index: QModelIndex) -> ProjectNode | None:
+        item = self.itemFromIndex(index)
+        return item if isinstance(item, ProjectNode) else None
+
+    def filePath(self, index: QModelIndex) -> str:  # type: ignore[override]
+        node = self.node_from_index(index)
+        if node:
+            return str(node.path)
+        return str(self.root_path)
+
+    def index_from_path(self, path: Path) -> QModelIndex:
+        path = Path(path)
+
+        def _search(parent: ProjectNode) -> QModelIndex:
+            for i in range(parent.rowCount()):
+                child = parent.child(i)
+                if isinstance(child, ProjectNode):
+                    if child.path == path:
+                        return child.index()
+                    res = _search(child)
+                    if res.isValid():
+                        return res
+            return QModelIndex()
+
+        return _search(self.invisibleRootItem())
+
+    def set_root_path(self, path: Path):
+        self.root_path = Path(path)
+        self.load_project()
+
+    def create_book(self, name: str) -> QModelIndex:
+        book_dir = self.root_path / name
+        ensure_dir(book_dir)
+        item = ProjectNode(name, book_dir, "book")
+        self._set_icon(item)
+        self.invisibleRootItem().appendRow(item)
+        return item.index()
+
+    def create_chapter(self, book_node: ProjectNode, name: str) -> QModelIndex:
+        chapter_dir = book_node.path / name
+        ensure_dir(chapter_dir)
+        item = ProjectNode(name, chapter_dir, "chapter")
+        self._set_icon(item)
+        book_node.appendRow(item)
+        return item.index()
+
+    def create_scene(self, chapter_node: ProjectNode, name: str) -> QModelIndex:
+        scene_path = chapter_node.path / f"{name}.txt"
+        if not scene_path.exists():
+            scene_path.write_text("", encoding="utf-8")
+        item = ProjectNode(name, scene_path, "scene")
+        self._set_icon(item)
+        chapter_node.appendRow(item)
+        return item.index()
+
+    def update_favorite_icon(self, path: Path):
+        idx = self.index_from_path(path)
+        if idx.isValid():
+            item = self.node_from_index(idx)
+            if item:
+                self._set_icon(item)
+
+
 class TagFilterProxyModel(QSortFilterProxyModel):
     """Proxy model that filters items based on assigned tags."""
 
@@ -580,16 +694,13 @@ class EditorWindow(QMainWindow):
         tree_splitter = QSplitter(Qt.Horizontal, self)
         editor_splitter = QSplitter(Qt.Horizontal, self)
 
-        self.fs_model = FavoriteFileSystemModel(self.favorites, self)
-        self.fs_model.setRootPath(str(self.workspace))
-        self.fs_model.setReadOnly(False)
+        self.project_model = ProjectTreeModel(self.workspace, self.favorites, self)
 
         self.tag_proxy = TagFilterProxyModel(self.tags, self)
-        self.tag_proxy.setSourceModel(self.fs_model)
+        self.tag_proxy.setSourceModel(self.project_model)
 
         self.tree = QTreeView(self)
         self.tree.setModel(self.tag_proxy)
-        self.tree.setRootIndex(self.tag_proxy.mapFromSource(self.fs_model.index(str(self.workspace))))
         self.tree.setColumnWidth(0, 280)
         for i in range(1, 4):
             self.tree.hideColumn(i)
@@ -944,9 +1055,7 @@ class EditorWindow(QMainWindow):
             return
         self.favorites.add(path_str)
         self._refresh_favorites_view()
-        idx = self.fs_model.index(path_str)
-        if idx.isValid():
-            self.fs_model.dataChanged.emit(idx, idx)
+        self.project_model.update_favorite_icon(path)
         self.save_favorites()
 
     def remove_favorite(self, path: Path):
@@ -955,9 +1064,7 @@ class EditorWindow(QMainWindow):
             return
         self.favorites.remove(path_str)
         self._refresh_favorites_view()
-        idx = self.fs_model.index(path_str)
-        if idx.isValid():
-            self.fs_model.dataChanged.emit(idx, idx)
+        self.project_model.update_favorite_icon(path)
         self.save_favorites()
 
     def save_favorites(self):
@@ -1011,9 +1118,7 @@ class EditorWindow(QMainWindow):
             self.workspace = Path(path)
             ensure_dir(self.workspace)
             self.lbl_path.setText("Pasta: " + str(self.workspace))
-            self.fs_model.setRootPath(str(self.workspace))
-            root_idx = self.fs_model.index(str(self.workspace))
-            self.tree.setRootIndex(self.tag_proxy.mapFromSource(root_idx))
+            self.project_model.set_root_path(self.workspace)
             self.current_file = None
             self.editor.clear()
             self.dirty = False
@@ -1042,11 +1147,11 @@ class EditorWindow(QMainWindow):
         try:
             ensure_dir(file_path.parent)
             file_path.write_text("", encoding="utf-8")
+            self.project_model.load_project()
         except Exception as e:
             QMessageBox.critical(self, APP_NAME, f"Erro ao criar arquivo:\n{e}")
             return
-        # Seleciona e abre
-        idx = self.fs_model.index(str(file_path))
+        idx = self.project_model.index_from_path(file_path)
         if idx.isValid():
             self.tree.setCurrentIndex(self.tag_proxy.mapFromSource(idx))
         self.open_file(file_path)
@@ -1205,49 +1310,64 @@ class EditorWindow(QMainWindow):
         if not index.isValid():
             return
         src_index = self.tag_proxy.mapToSource(index)
-        file_path = Path(self.fs_model.filePath(src_index))
-        if file_path.is_file():
+        node = self.project_model.node_from_index(src_index)
+        if node and node.node_type == "scene":
             # Verifica mudanças não salvas antes de trocar
             if not self.maybe_save_changes():
                 return
-            self.open_file(file_path)
+            self.open_file(node.path)
 
     def _on_tree_context_menu(self, pos):
         index = self.tree.indexAt(pos)
         menu = QMenu(self)
-        act_new_file = menu.addAction("Novo arquivo…")
-        act_new_folder = menu.addAction("Nova pasta…")
+        act_new_book = menu.addAction("Novo Livro…")
+        act_new_chapter = None
+        act_new_scene = None
         act_favorite = None
         act_add_tag = None
         act_remove_tag = None
+        act_rename = None
+        act_delete = None
+        node = None
         file_path = None
         if index.isValid():
             src_index = self.tag_proxy.mapToSource(index)
-            file_path = Path(self.fs_model.filePath(src_index))
-            if str(file_path) in self.favorites:
-                act_favorite = menu.addAction("Remover dos Favoritos")
-            else:
-                act_favorite = menu.addAction("Adicionar aos Favoritos")
-            act_add_tag = menu.addAction("Adicionar Tag…")
-            if str(file_path) in self.tags and self.tags[str(file_path)]:
-                act_remove_tag = menu.addAction("Remover Tag…")
-            if file_path.is_file():
-                menu.addSeparator()
-                act_rename = menu.addAction("Renomear…")
-                act_delete = menu.addAction("Excluir…")
+            node = self.project_model.node_from_index(src_index)
+            if node:
+                file_path = node.path
+                if node.node_type == "book":
+                    act_new_chapter = menu.addAction("Novo Capítulo…")
+                elif node.node_type == "chapter":
+                    act_new_scene = menu.addAction("Nova Cena…")
+                if str(file_path) in self.favorites:
+                    act_favorite = menu.addAction("Remover dos Favoritos")
+                else:
+                    act_favorite = menu.addAction("Adicionar aos Favoritos")
+                act_add_tag = menu.addAction("Adicionar Tag…")
+                if str(file_path) in self.tags and self.tags[str(file_path)]:
+                    act_remove_tag = menu.addAction("Remover Tag…")
+                if node.node_type == "scene":
+                    menu.addSeparator()
+                    act_rename = menu.addAction("Renomear…")
+                    act_delete = menu.addAction("Excluir…")
         chosen = menu.exec_(self.tree.viewport().mapToGlobal(pos))
-        base_dir = self.workspace if not index.isValid() else Path(self.fs_model.filePath(self.tag_proxy.mapToSource(index)))
-        if base_dir.is_file():
-            base_dir = base_dir.parent
 
-        if chosen == act_new_file:
-            name, ok = QInputDialog.getText(self, "Novo arquivo", "Nome do arquivo:")
+        if chosen == act_new_book:
+            name, ok = QInputDialog.getText(self, "Novo Livro", "Nome do livro:")
             if ok and name.strip():
-                (base_dir / name).write_text("", encoding="utf-8")
-        elif chosen == act_new_folder:
-            name, ok = QInputDialog.getText(self, "Nova pasta", "Nome da pasta:")
+                self.project_model.create_book(name.strip())
+        elif chosen == act_new_chapter and node:
+            name, ok = QInputDialog.getText(self, "Novo Capítulo", "Nome do capítulo:")
             if ok and name.strip():
-                ensure_dir(base_dir / name)
+                self.project_model.create_chapter(node, name.strip())
+        elif chosen == act_new_scene and node:
+            name, ok = QInputDialog.getText(self, "Nova Cena", "Nome da cena:")
+            if ok and name.strip():
+                idx = self.project_model.create_scene(node, name.strip())
+                self.tree.setCurrentIndex(self.tag_proxy.mapFromSource(idx))
+                new_node = self.project_model.node_from_index(idx)
+                if new_node:
+                    self.open_file(new_node.path)
         elif chosen == act_favorite and file_path is not None:
             if str(file_path) in self.favorites:
                 self.remove_favorite(file_path)
@@ -1275,19 +1395,30 @@ class EditorWindow(QMainWindow):
                     self.save_tags()
                     self._refresh_tags_view()
                     self.tag_proxy.invalidateFilter()
-        elif index.isValid() and file_path and file_path.is_file():
-            if chosen and chosen.text().startswith("Renomear"):
-                new_name, ok = QInputDialog.getText(self, "Renomear", "Novo nome:", text=file_path.name)
-                if ok and new_name.strip():
-                    new_path = file_path.with_name(new_name)
-                    if new_path.exists():
-                        QMessageBox.warning(self, APP_NAME, "Já existe um item com esse nome.")
-                    else:
-                        file_path.rename(new_path)
-            elif chosen and chosen.text().startswith("Excluir"):
-                resp = QMessageBox.question(self, APP_NAME, f"Excluir {file_path.name}?", QMessageBox.Yes | QMessageBox.No)
-                if resp == QMessageBox.Yes:
-                    file_path.unlink()
+        elif chosen == act_rename and node:
+            default = node.path.stem if node.node_type == "scene" else node.path.name
+            new_name, ok = QInputDialog.getText(self, "Renomear", "Novo nome:", text=default)
+            if ok and new_name.strip():
+                if node.node_type == "scene":
+                    new_path = node.path.with_name(new_name + ".txt")
+                else:
+                    new_path = node.path.with_name(new_name)
+                if new_path.exists():
+                    QMessageBox.warning(self, APP_NAME, "Já existe um item com esse nome.")
+                else:
+                    node.path.rename(new_path)
+                    node.path = new_path
+                    node.setText(new_name)
+                    self.project_model.update_favorite_icon(new_path)
+        elif chosen == act_delete and node:
+            resp = QMessageBox.question(self, APP_NAME, f"Excluir {node.path.name}?", QMessageBox.Yes | QMessageBox.No)
+            if resp == QMessageBox.Yes:
+                try:
+                    node.path.unlink()
+                except Exception:
+                    pass
+                parent = node.parent() or self.project_model.invisibleRootItem()
+                parent.removeRow(node.row())
 
     def _apply_theme(self, dark: bool):
         if dark:
