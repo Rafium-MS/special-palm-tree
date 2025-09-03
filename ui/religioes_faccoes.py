@@ -23,6 +23,8 @@ from PyQt5.QtWidgets import (
     QInputDialog, QCheckBox
 )
 
+from core.relations import RelationGraph
+
 # ----------------------------- Estado -----------------------------
 @dataclass
 class Grupo:
@@ -48,9 +50,11 @@ class Grupo:
     financas: List[Dict[str, str]] = field(default_factory=list)   # {fonte, descricao}
     territorios: List[Dict[str, str]] = field(default_factory=list) # {local, controle}
     relacoes: List[Dict[str, str]] = field(default_factory=list)    # {grupo, relacao}
+    areas_influencia: List[str] = field(default_factory=list)       # IDs de cidades/regiões
 
     # Cultura
-    rituais: List[Dict[str, str]] = field(default_factory=list)     # {nome, descricao}
+    crencas: str = ""
+    ritos: List[Dict[str, str]] = field(default_factory=list)     # {nome, descricao}
     tecnologias: str = ""      # magia/tecnologia permitida
     reputacao: str = "Neutra"  # Boa, Neutra, Má (livre)
     tags: List[str] = field(default_factory=list)
@@ -73,7 +77,9 @@ TEMPLATES_GRUPO: Dict[str, Dict] = {
         "financas": [{"fonte": "Dízimos", "descricao": "Ofertas dos fiéis"}],
         "territorios": [{"local": "Cidades do Vale", "controle": "influência"}],
         "relacoes": [{"grupo": "Ordem dos Corvos", "relacao": "aliança"}],
-        "rituais": [{"nome": "Aurora", "descricao": "Cântico ao amanhecer"}],
+        "crencas": "",
+        "ritos": [{"nome": "Aurora", "descricao": "Cântico ao amanhecer"}],
+        "areas_influencia": [],
         "tecnologias": "Magia solar; artefatos de luz.",
         "reputacao": "Boa",
         "eventos": [{"ano": "-200", "evento": "Fundação do Grande Templo"}]
@@ -90,7 +96,9 @@ TEMPLATES_GRUPO: Dict[str, Dict] = {
         "financas": [{"fonte": "Contratos", "descricao": "Proteção de caravanas"}],
         "territorios": [{"local": "Distrito Norte", "controle": "patrulha"}],
         "relacoes": [{"grupo": "Guilda Mercantil", "relacao": "aliança"}],
-        "rituais": [{"nome": "Voto das Plumas", "descricao": "Iniciação"}],
+        "crencas": "",
+        "ritos": [{"nome": "Voto das Plumas", "descricao": "Iniciação"}],
+        "areas_influencia": [],
         "tecnologias": "Alquimia leve; arcos compostos.",
         "reputacao": "Neutra",
         "eventos": [{"ano": "15", "evento": "Derrota dos saqueadores"}]
@@ -107,7 +115,9 @@ TEMPLATES_GRUPO: Dict[str, Dict] = {
         "financas": [{"fonte": "Tarifas", "descricao": "Taxas de intermediação"}],
         "territorios": [{"local": "Rotas do Sul", "controle": "cartel"}],
         "relacoes": [{"grupo": "Culto do Sol Invicto", "relacao": "aliança"}],
-        "rituais": [{"nome": "Fecho de Selo", "descricao": "Cerimônia de contrato"}],
+        "crencas": "",
+        "ritos": [{"nome": "Fecho de Selo", "descricao": "Cerimônia de contrato"}],
+        "areas_influencia": [],
         "tecnologias": "Códigos de cifragem; contabilidade.",
         "reputacao": "Boa",
         "eventos": [{"ano": "-10", "evento": "Monopólio da rota litorânea"}]
@@ -124,7 +134,9 @@ TEMPLATES_GRUPO: Dict[str, Dict] = {
         "financas": [{"fonte": "Patentes", "descricao": "Royalties de IA"}],
         "territorios": [{"local": "Colônias Beta", "controle": "concessões"}],
         "relacoes": [{"grupo": "Sindicatos dos Canais", "relacao": "inimigos"}],
-        "rituais": [{"nome": "Demo-Day Orbital", "descricao": "Lançamento trimestral"}],
+        "crencas": "",
+        "ritos": [{"nome": "Demo-Day Orbital", "descricao": "Lançamento trimestral"}],
+        "areas_influencia": [],
         "tecnologias": "IA proprietária; drones autônomos.",
         "reputacao": "Neutra",
         "eventos": [{"ano": "2210", "evento": "Aquisição da ExoLabs"}]
@@ -141,7 +153,9 @@ TEMPLATES_GRUPO: Dict[str, Dict] = {
         "financas": [{"fonte": "Pedágio", "descricao": "Taxa sobre carga ilícita"}],
         "territorios": [{"local": "Portos Orbitais", "controle": "infiltração"}],
         "relacoes": [{"grupo": "Corporação ArcTec", "relacao": "inimigos"}],
-        "rituais": [{"nome": "Juramento do Canal", "descricao": "Batismo em água reciclada"}],
+        "crencas": "",
+        "ritos": [{"nome": "Juramento do Canal", "descricao": "Batismo em água reciclada"}],
+        "areas_influencia": [],
         "tecnologias": "Encriptação de malha; impressoras clandestinas.",
         "reputacao": "Má",
         "eventos": [{"ano": "2204", "evento": "Tomada do Armazém 7"}]
@@ -309,9 +323,15 @@ class PageOperacao(QWidget):
         v3 = QVBoxLayout(box_r)
         self.tab_rel = _TableEdit(["Grupo", "Relacao"], self.g.relacoes)
         v3.addWidget(self.tab_rel)
+        # áreas de influência
+        box_ai = QGroupBox("Áreas de Influência (IDs de cidades/regiões)")
+        v4 = QVBoxLayout(box_ai)
+        self.tab_ai = _TableEdit(["ID"], [{"id": a} for a in self.g.areas_influencia])
+        v4.addWidget(self.tab_ai)
         layout.addWidget(box_f)
         layout.addWidget(box_t)
         layout.addWidget(box_r)
+        layout.addWidget(box_ai)
         btn = QPushButton("Salvar Operação"); btn.clicked.connect(self.save)
         layout.addWidget(btn); layout.addStretch(1)
 
@@ -319,6 +339,7 @@ class PageOperacao(QWidget):
         self.g.financas = self.tab_fin.to_list()
         self.g.territorios = self.tab_ter.to_list()
         self.g.relacoes = self.tab_rel.to_list()
+        self.g.areas_influencia = [d.get("id", "") for d in self.tab_ai.to_list() if d.get("id")]
         self.on_change()
 
 class PageCultura(QWidget):
@@ -327,16 +348,18 @@ class PageCultura(QWidget):
         self.g = g; self.on_change = on_change
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel("<h2>Cultura</h2>"))
-        # rituais
-        box_ri = QGroupBox("Rituais (nome/descrição)")
+        # ritos
+        box_ri = QGroupBox("Ritos (nome/descrição)")
         v1 = QVBoxLayout(box_ri)
-        self.tab_rit = _TableEdit(["Nome", "Descricao"], self.g.rituais)
+        self.tab_rit = _TableEdit(["Nome", "Descricao"], self.g.ritos)
         v1.addWidget(self.tab_rit)
-        # tecnologia/magia & reputação
+        # crenças, tecnologia/magia & reputação
         form = QFormLayout()
+        self.tx_crencas = QTextEdit(self.g.crencas)
         self.tx_tec = QTextEdit(self.g.tecnologias)
         self.ed_rep = QLineEdit(self.g.reputacao)
         self.ed_tags = QLineEdit(",".join(self.g.tags))
+        form.addRow("Crenças:", self.tx_crencas)
         form.addRow("Tecnologia/Magia:", self.tx_tec)
         form.addRow("Reputação:", self.ed_rep)
         form.addRow("Tags (separadas por vírgula):", self.ed_tags)
@@ -346,7 +369,8 @@ class PageCultura(QWidget):
         layout.addWidget(btn); layout.addStretch(1)
 
     def save(self):
-        self.g.rituais = self.tab_rit.to_list()
+        self.g.ritos = self.tab_rit.to_list()
+        self.g.crencas = self.tx_crencas.toPlainText().strip()
         self.g.tecnologias = self.tx_tec.toPlainText().strip()
         self.g.reputacao = self.ed_rep.text().strip()
         self.g.tags = [t.strip() for t in self.ed_tags.text().split(',') if t.strip()]
@@ -404,7 +428,8 @@ class MainWindow(QMainWindow):
         self.btn_tpl = QPushButton("Template…")
         self.btn_dup = QPushButton("Duplicar")
         self.btn_del = QPushButton("Excluir")
-        hl.addWidget(self.btn_new); hl.addWidget(self.btn_tpl); hl.addWidget(self.btn_dup); hl.addWidget(self.btn_del)
+        self.btn_graph = QPushButton("Rede")
+        hl.addWidget(self.btn_new); hl.addWidget(self.btn_tpl); hl.addWidget(self.btn_dup); hl.addWidget(self.btn_del); hl.addWidget(self.btn_graph)
         vleft.addWidget(QLabel("Grupos"))
         vleft.addWidget(self.lst, 1)
         vleft.addLayout(hl)
@@ -425,6 +450,7 @@ class MainWindow(QMainWindow):
         self.btn_tpl.clicked.connect(self._novo_de_template)
         self.btn_dup.clicked.connect(self._duplicar)
         self.btn_del.clicked.connect(self._excluir)
+        self.btn_graph.clicked.connect(self._mostrar_rede)
         self.lst.currentRowChanged.connect(self._trocar)
 
         # menu
@@ -522,6 +548,18 @@ class MainWindow(QMainWindow):
     def _on_change(self):
         if self.idx_atual >= 0:
             self.page_res.refresh()
+
+    def _mostrar_rede(self):
+        """Exibe grafo das relações entre grupos."""
+        graph = RelationGraph()
+        for g in self.grupos:
+            graph.add_entity(g.nome, tipo=g.tipo)
+        for g in self.grupos:
+            for rel in g.relacoes:
+                alvo = rel.get("grupo")
+                if alvo:
+                    graph.add_relation(g.nome, alvo, rel.get("relacao", ""))
+        graph.plot()
 
     # --- Export/Import ---
     def _exportar(self):
