@@ -76,6 +76,7 @@ from utils import (
     read_file_text,
     search_workspace,
 )
+from demografico_medieval import MainWindow as DemograficoWindow
 class FavoriteFileSystemModel(QFileSystemModel):
     """File system model that highlights favorite paths."""
 
@@ -658,6 +659,8 @@ class EditorWindow(QMainWindow):
         menu_tools.addAction(self.act_set_font)
         menu_tools.addAction(self.act_autosave_settings)
         menu_tools.addAction(self.act_set_daily_goal)
+        menu_tools.addSeparator()
+        menu_tools.addAction(self.act_open_demografico)
         self.menu_history = self.menuBar().addMenu("Histórico de versões")
         self.menu_history.aboutToShow.connect(self._populate_history_menu)
 
@@ -829,6 +832,13 @@ class EditorWindow(QMainWindow):
             msg += "\nPalavras-chave:\n" + top
         QMessageBox.information(self, "Estatísticas", msg)
 
+    def open_demografico_medieval(self):
+        if not hasattr(self, "demografico_window"):
+            self.demografico_window = DemograficoWindow()
+        self.demografico_window.show()
+        self.demografico_window.raise_()
+        self.demografico_window.activateWindow()
+
     def check_spelling(self):
         text = self.editor.toPlainText()
         words = re.findall(r"\b\w+\b", text.lower())
@@ -910,6 +920,7 @@ class EditorWindow(QMainWindow):
         self.act_set_font = QAction("Configurar Fonte…", self)
         self.act_autosave_settings = QAction("Configurar Autosave…", self)
         self.act_set_daily_goal = QAction("Definir Meta Diária…", self)
+        self.act_open_demografico = QAction("Construtor Demográfico Medieval…", self)
 
         # Sair
         self.act_close_tab = QAction("Fechar Arquivo (Ctrl+W)", self)
@@ -989,6 +1000,7 @@ class EditorWindow(QMainWindow):
         self.act_set_font.triggered.connect(self.configure_font)
         self.act_autosave_settings.triggered.connect(self.configure_autosave)
         self.act_set_daily_goal.triggered.connect(self.configure_daily_goal)
+        self.act_open_demografico.triggered.connect(self.open_demografico_medieval)
 
         self.find_bar.btn_close.clicked.connect(lambda: self.find_bar.setVisible(False))
         self.find_bar.btn_next.clicked.connect(lambda: self.find_next(True))
