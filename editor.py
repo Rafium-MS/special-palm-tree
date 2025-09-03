@@ -919,6 +919,7 @@ class EditorWindow(QMainWindow):
 
         # Arquivos
         self.act_new_file = QAction(style.standardIcon(QStyle.SP_FileIcon), "Novo Arquivo (Ctrl+N)", self)
+        self.act_open_file = QAction(style.standardIcon(QStyle.SP_DialogOpenButton), "Abrir Arquivo (Ctrl+O)", self)
         self.act_save = QAction(style.standardIcon(QStyle.SP_DialogSaveButton), "Salvar (Ctrl+S)", self)
         self.act_save_as = QAction("Salvar Como… (Ctrl+Shift+S)", self)
         self.act_export = QAction("Exportar…", self)
@@ -954,6 +955,7 @@ class EditorWindow(QMainWindow):
 
         # Atalhos
         self.act_new_file.setShortcut(QKeySequence.New)
+        self.act_open_file.setShortcut(QKeySequence.Open)
         self.act_save.setShortcut(QKeySequence.Save)
         self.act_save_as.setShortcut(QKeySequence.SaveAs)
         self.act_find.setShortcut(QKeySequence.Find)
@@ -966,6 +968,7 @@ class EditorWindow(QMainWindow):
         self.toolbar.addAction(self.act_choose_workspace)
         self.toolbar.addSeparator()
         self.toolbar.addAction(self.act_new_file)
+        self.toolbar.addAction(self.act_open_file)
         self.toolbar.addAction(self.act_save)
         self.toolbar.addAction(self.act_save_as)
         self.toolbar.addAction(self.act_export)
@@ -985,6 +988,7 @@ class EditorWindow(QMainWindow):
     def _apply_shortcuts(self):
         mapping = {
             "new_file": self.act_new_file,
+            "open_file": self.act_open_file,
             "save": self.act_save,
             "save_as": self.act_save_as,
             "find": self.act_find,
@@ -1011,6 +1015,7 @@ class EditorWindow(QMainWindow):
         self.act_choose_workspace.triggered.connect(self.choose_workspace)
         self.act_open_in_explorer.triggered.connect(self.open_workspace_in_explorer)
         self.act_new_file.triggered.connect(self.new_file)
+        self.act_open_file.triggered.connect(self.open_file_dialog)
         self.act_save.triggered.connect(self.save_file)
         self.act_save_as.triggered.connect(self.save_file_as)
         self.act_export.triggered.connect(self.export_document)
@@ -1256,6 +1261,16 @@ class EditorWindow(QMainWindow):
         if idx.isValid():
             self.tree.setCurrentIndex(self.tag_proxy.mapFromSource(idx))
         self.open_file(file_path)
+
+    def open_file_dialog(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Abrir arquivo",
+            str(self.workspace),
+            "Textos (*.txt *.md *.markdown *.json *.yaml *.yml *.ini *.cfg *.csv);;Todos (*.*)",
+        )
+        if path:
+            self.open_file(Path(path))
 
     def save_file(self):
         if not self.current_file:
