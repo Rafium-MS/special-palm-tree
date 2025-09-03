@@ -13,6 +13,7 @@ from dataclasses import dataclass, field, asdict
 from typing import List, Dict
 import json
 import sys
+import re
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
@@ -151,7 +152,20 @@ class PageBasico(QWidget):
         layout.addWidget(btn)
         layout.addStretch(1)
 
+        # Atualiza indicadores imediatamente ao mudar impostos ou tarifas
+        self.dbl_taxa.valueChanged.connect(self._autosave)
+        self.dbl_tarifa.valueChanged.connect(self._autosave)
+
+    def _autosave(self):
+        """Atualiza o estado e dispara a atualização do resumo."""
+        self._update_state()
+        self.on_change()
+
     def save(self):
+        self._update_state()
+        self.on_change()
+
+    def _update_state(self):
         self.e.nome = self.ed_nome.text().strip()
         self.e.escopo = self.cb_escopo.currentText()
         self.e.moeda = self.ed_moeda.text().strip()
@@ -160,7 +174,6 @@ class PageBasico(QWidget):
         self.e.taxa_imposto = self.dbl_taxa.value()
         self.e.tarifa_comercial = self.dbl_tarifa.value()
         self.e.inflacao = self.dbl_infl.value()
-        self.on_change()
 
 class _TableEdit(QWidget):
     """Componente simples para editar listas de dict em tabela."""
@@ -344,11 +357,23 @@ class PageResumo(QWidget):
         # Cálculos simples (placeholders):
         pib = e.populacao * e.renda_per_capita
         arrec = pib * (e.taxa_imposto/100.0)
-        comercio = pib * (max(0.0, 20.0 - e.tarifa_comercial)/100.0)  # proxy tosco
+
+        def _parse_volume(txt: str) -> float:
+            m = re.search(r"-?\d+(?:[.,]\d+)?", txt)
+            return float(m.group(0).replace(',', '.')) if m else 0.0
+
+        balanca = sum(_parse_volume(r.get('volume', '0')) for r in e.rotas)
+        participacao = {}
+        for s in e.setores:
+            try:
+                participacao[s.get('setor', '')] = float(s.get('participacao%', '0'))
+            except ValueError:
+                continue
         return {
             "PIB (índice)": round(pib, 2),
             "Arrecadação (índice)": round(arrec, 2),
-            "Atividade Comercial (índice)": round(comercio, 2),
+            "Balança Comercial (índice)": round(balanca, 2),
+            "Participação Setorial (%)": participacao,
         }
 
     def refresh(self):
