@@ -9,6 +9,8 @@ _TOKENS_PATH = Path(__file__).with_name("tokens.json")
 with _TOKENS_PATH.open("r", encoding="utf-8") as fh:
     TOKENS = json.load(fh)
 
+# 🔹 Exportar os temas disponíveis
+THEMES = TOKENS.get("themes", {})
 
 def _build_stylesheet(palette: dict) -> str:
     typography = TOKENS.get("typography", {})
