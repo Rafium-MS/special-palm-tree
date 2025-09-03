@@ -70,14 +70,13 @@ from shared.constants import (
     HISTORY_DIRNAME,
     MAX_SNAPSHOTS,
 )
-from shared.utils import (
+from shared.fs_utils import ensure_dir
+from shared.text_utils import (
     compute_stats,
-    ensure_dir,
-    load_config,
-    save_config,
     read_file_text,
     search_workspace,
 )
+from shared.utils import load_config, save_config
 from core.io import export_text, export_project_zip, import_batch
 from .demografico_medieval import MainWindow as DemograficoWindow
 from .personagens import MainWindow as PersonagensWindow
