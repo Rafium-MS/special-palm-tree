@@ -643,6 +643,15 @@ class MainWindow(QMainWindow):
         with open(path, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
 
+    # --- Utilidades ---
+    def get_personagem_por_nome(self, nome: str) -> Personagem | None:
+        """Return the first personagem whose ``nome`` matches ``nome`` (case-insensitive)."""
+        nome_lower = nome.strip().lower()
+        for p in self.personagens:
+            if p.nome.lower() == nome_lower:
+                return p
+        return None
+
 
 # ----------------------------- Execução -----------------------------
 def main():

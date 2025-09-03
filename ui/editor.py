@@ -769,8 +769,14 @@ class EditorWindow(QMainWindow):
         self.preview = QTextBrowser(self)
         self.preview.setOpenExternalLinks(True)
 
+        self.link_panel = QTextBrowser(self)
+        self.link_panel.setOpenExternalLinks(False)
+        self.link_panel.setVisible(False)
+        self.link_panel.setMinimumWidth(200)
+
         editor_splitter.addWidget(self.editor)
         editor_splitter.addWidget(self.preview)
+        editor_splitter.addWidget(self.link_panel)
         self.notes = QPlainTextEdit(self)
         self.notes.setPlaceholderText("Anotações…")
         self.notes.setMinimumWidth(150)
@@ -920,12 +926,28 @@ class EditorWindow(QMainWindow):
         tipo, nome = m.groups()
         t = tipo.lower()
         if t.startswith("personagem"):
-            self.open_personagens()
+            if not hasattr(self, "personagens_window"):
+                self.personagens_window = PersonagensWindow()
+            p = self.personagens_window.get_personagem_por_nome(nome)
+            if p:
+                html = f"<h2>{p.nome}</h2>"
+                html += f"<p><b>Papel:</b> {p.papel}</p>"
+                html += f"<p><b>Idade:</b> {p.idade}</p>"
+                if p.tags:
+                    html += f"<p><b>Tags:</b> {' '.join(p.tags)}</p>"
+                self.link_panel.setHtml(html)
+                self.link_panel.setVisible(True)
+            else:
+                self.link_panel.setVisible(False)
+                QMessageBox.information(self, "Link", f"Personagem '{nome}' não encontrado.")
         elif t.startswith("cidade"):
+            self.link_panel.setVisible(False)
             self.open_cidades_planetas()
         elif t.startswith("grupo"):
+            self.link_panel.setVisible(False)
             self.open_religioes_faccoes()
         else:
+            self.link_panel.setVisible(False)
             QMessageBox.information(self, "Link", f"{tipo}: {nome}")
 
     def check_spelling(self):
