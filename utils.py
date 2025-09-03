@@ -36,6 +36,8 @@ def load_config():
         cfg = {}
 
     cfg.setdefault("daily_word_goal", 0)
+    cfg.setdefault("theme", "light")
+    cfg.setdefault("line_spacing", 1.0)
     return cfg
 
 
