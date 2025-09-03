@@ -7,10 +7,18 @@ from typing import Dict, List, Optional
 from pydantic import BaseModel, Field, validator
 
 
-class Character(BaseModel):
-    """Representation of a character in the world."""
+class BaseEntity(BaseModel):
+    """Common reusable fields for world entities."""
 
     name: str
+    summary: str | None = None
+    tags: List[str] = Field(default_factory=list)
+    relations: List[str] = Field(default_factory=list)
+
+
+class Character(BaseEntity):
+    """Representation of a character in the world."""
+
     birth_year: int = Field(ge=-10_000)
     location: Optional[str] = None
     faction: Optional[str] = None
@@ -21,21 +29,17 @@ class Character(BaseModel):
         return -self.birth_year
 
 
-class Location(BaseModel):
-    name: str
+class Location(BaseEntity):
     population: int = Field(ge=0)
     region: Optional[str] = None
 
 
-class Faction(BaseModel):
-    name: str
-    description: Optional[str] = None
+class Faction(BaseEntity):
     allies: List[str] = Field(default_factory=list)
     enemies: List[str] = Field(default_factory=list)
 
 
-class EconomyProfile(BaseModel):
-    name: str
+class EconomyProfile(BaseEntity):
     gdp: float | None = None
     notes: Optional[str] = None
 
@@ -77,6 +81,5 @@ def validate_event_characters(
             )
 
 
-class World(BaseModel):
-    name: str
+class World(BaseEntity):
     description: Optional[str] = None
