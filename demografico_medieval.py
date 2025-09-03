@@ -21,6 +21,7 @@ from PyQt5.QtWidgets import (
     QTableWidgetItem, QAbstractItemView, QFrame, QSlider, QFileDialog
 )
 import sys
+import random
 
 
 # ----------------------------- Estado (modelo simples) -----------------------------
@@ -68,6 +69,38 @@ PRESETS = {
     "Império":         dict(habitantes=500000,densidade_urbana=0.50, expectativa_vida=42),
     "Novo Assentamento": dict(habitantes=80, densidade_urbana=0.05, expectativa_vida=30),
 }
+
+
+def calcular_nascimentos(state: AssentamentoState) -> float:
+    """Calcula nascimentos esperados em um ano como número real.
+
+    Uma pequena variação aleatória é aplicada para simular incertezas
+    demográficas. O resultado é retornado como ``float``.
+    """
+    base = state.habitantes * (state.taxa_natalidade / 1000.0)
+    variacao = random.uniform(-0.1, 0.1) * base
+    return base + variacao
+
+
+def calcular_mortes(state: AssentamentoState) -> float:
+    """Calcula mortes esperadas em um ano como número real.
+
+    Aplica a mesma variação aleatória usada em ``calcular_nascimentos``.
+    """
+    base = state.habitantes * (state.taxa_mortalidade / 1000.0)
+    variacao = random.uniform(-0.1, 0.1) * base
+    return base + variacao
+
+
+def simular_ano(state: AssentamentoState) -> float:
+    """Atualiza a população aplicando nascimentos e mortes.
+
+    O novo total de habitantes é retornado como número real.
+    """
+    nascimentos = calcular_nascimentos(state)
+    mortes = calcular_mortes(state)
+    state.habitantes = max(0, int(state.habitantes + nascimentos - mortes))
+    return float(state.habitantes)
 
 
 # ----------------------------- Páginas -----------------------------
@@ -398,6 +431,8 @@ class PaginaResultados(QWidget):
         add_row("Expectativa de Vida", s.expectativa_vida)
         add_row("Natalidade (‰)", s.taxa_natalidade)
         add_row("Mortalidade (‰)", s.taxa_mortalidade)
+        add_row("Nascimentos (simulados)", round(calcular_nascimentos(s), 2))
+        add_row("Mortes (simuladas)", round(calcular_mortes(s), 2))
         add_row("Recursos", ", ".join(s.recursos) if s.recursos else "—")
 
         # classes sociais
