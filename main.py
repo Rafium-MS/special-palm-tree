@@ -1,3 +1,4 @@
+import getpass
 import sys
 from pathlib import Path
 
@@ -6,12 +7,12 @@ from PyQt5.QtGui import QPixmap
 from PyQt5.QtWidgets import QApplication, QMessageBox, QSplashScreen
 
 from config import settings
+from shared.fs_utils import ensure_dir
 from shared.i18n import t
 from shared.logging import get_logger
-from shared.fs_utils import ensure_dir
 from shared.utils import load_config
 from ui.editor import EditorWindow
-from ui.theme import apply_theme
+from ui.theme import apply_theme, load_theme
 
 logger = get_logger(__name__)
 
@@ -44,7 +45,9 @@ def maybe_show_splash(workspace: Path, app: QApplication) -> QSplashScreen | Non
         file_count = 0
     if file_count > 200:  # heuristic for large projects
         splash = QSplashScreen(QPixmap(400, 300))
-        splash.showMessage("Carregando projeto...", Qt.AlignBottom | Qt.AlignCenter, Qt.white)
+        splash.showMessage(
+            "Carregando projeto...", Qt.AlignBottom | Qt.AlignCenter, Qt.white
+        )
         splash.show()
         app.processEvents()
         return splash
@@ -67,11 +70,13 @@ def get_main_window(module: str):
 def main():
     ensure_dir(settings.workspace)
     app = QApplication(sys.argv)
-    apply_theme(settings.theme)
     sys.excepthook = handle_exception
 
     module = sys.argv[1].lower() if len(sys.argv) > 1 else "editor"
     workspace = detect_recent_workspace()
+    user_id = getpass.getuser()
+    theme = load_theme(workspace.name, user_id)
+    apply_theme(theme, workspace.name, user_id)
     splash = maybe_show_splash(workspace, app) if module == "editor" else None
 
     w = get_main_window(module)
