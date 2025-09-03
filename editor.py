@@ -372,6 +372,13 @@ class MarkdownHighlighter(QSyntaxHighlighter):
             self._apply_format_range(a, b + 1, link_fmt)
             start = b + 1
 
+        # ----- internal wiki-style links [[Tipo:Nome]] -----
+        wiki_fmt = QTextCharFormat()
+        wiki_fmt.setForeground(QColor("#4fc1ff"))
+        wiki_fmt.setFontUnderline(True)
+        for m in re.finditer(r"\[\[[^\]]+\]\]", text):
+            self._apply_format_range(m.start(), m.end(), wiki_fmt)
+
         self.setCurrentBlockState(0)
 
 class FindBar(QWidget):
@@ -423,6 +430,18 @@ class SpellPlainTextEdit(QPlainTextEdit):
         cursor.insertText(new_word)
         cursor.endEditBlock()
         self.main_window.check_spelling()
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton and event.modifiers() & Qt.ControlModifier:
+            cursor = self.cursorForPosition(event.pos())
+            block = cursor.block()
+            text = block.text()
+            pos = cursor.position() - block.position()
+            for m in re.finditer(r"\[\[([^\]]+)\]\]", text):
+                if m.start() <= pos <= m.end():
+                    self.main_window.open_internal_link(m.group(1))
+                    return
+        super().mouseReleaseEvent(event)
 
 
 
@@ -888,6 +907,23 @@ class EditorWindow(QMainWindow):
         self.cidades_window.show()
         self.cidades_window.raise_()
         self.cidades_window.activateWindow()
+
+    def open_internal_link(self, target: str):
+        """Open constructor windows based on a [[Tipo:Nome]] target."""
+        m = re.match(r"([^:]+):(.*)", target)
+        if not m:
+            QMessageBox.information(self, "Link", target)
+            return
+        tipo, nome = m.groups()
+        t = tipo.lower()
+        if t.startswith("personagem"):
+            self.open_personagens()
+        elif t.startswith("cidade"):
+            self.open_cidades_planetas()
+        elif t.startswith("grupo"):
+            self.open_religioes_faccoes()
+        else:
+            QMessageBox.information(self, "Link", f"{tipo}: {nome}")
 
     def check_spelling(self):
         text = self.editor.toPlainText()
