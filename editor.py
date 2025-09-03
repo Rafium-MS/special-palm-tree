@@ -584,7 +584,7 @@ class EditorWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle(APP_NAME)
-        self.resize(1100, 700)
+        self.resize(1570, 820)
 
         cfg = load_config()
         workspace = Path(cfg.get("workspace", str(DEFAULT_WORKSPACE)))
