@@ -3,7 +3,7 @@ import re
 from collections import Counter
 from pathlib import Path
 
-from constants import CONFIG_FILE, DEFAULT_WORKSPACE, SUPPORTED_TEXT_EXTS
+from .constants import CONFIG_FILE, DEFAULT_WORKSPACE, SUPPORTED_TEXT_EXTS
 
 
 def compute_stats(text: str, wpm: int = 200, top_n: int = 5):
@@ -43,7 +43,9 @@ def load_config():
 
 def save_config(cfg: dict):
     try:
-        CONFIG_FILE.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
+        CONFIG_FILE.write_text(
+            json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
     except Exception:
         pass
 
@@ -60,8 +62,8 @@ def read_file_text(file_path: Path) -> str:
         return "\n".join(p.text for p in doc.paragraphs)
     if ext == ".odt":
         try:
+            from odf import teletype, text
             from odf.opendocument import load
-            from odf import text, teletype
         except Exception as e:
             raise RuntimeError("Biblioteca odfpy não instalada") from e
         doc = load(str(file_path))
@@ -89,7 +91,10 @@ def search_workspace(pattern: str):
     results = []
     pattern_lower = pattern.lower()
     for file_path in DEFAULT_WORKSPACE.rglob("*"):
-        if not file_path.is_file() or file_path.suffix.lower() not in SUPPORTED_TEXT_EXTS:
+        if (
+            not file_path.is_file()
+            or file_path.suffix.lower() not in SUPPORTED_TEXT_EXTS
+        ):
             continue
         try:
             text = file_path.read_text(encoding="utf-8")

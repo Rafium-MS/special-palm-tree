@@ -62,14 +62,14 @@ from PyQt5.QtPrintSupport import QPrinter
 
 from spellchecker import SpellChecker
 
-from constants import (
+from shared.constants import (
     APP_NAME,
     DEFAULT_WORKSPACE,
     AUTOSAVE_DIRNAME,
     HISTORY_DIRNAME,
     MAX_SNAPSHOTS,
 )
-from utils import (
+from shared.utils import (
     compute_stats,
     ensure_dir,
     load_config,
@@ -77,13 +77,13 @@ from utils import (
     read_file_text,
     search_workspace,
 )
-from demografico_medieval import MainWindow as DemograficoWindow
-from personagens import MainWindow as PersonagensWindow
-from economico import MainWindow as EconomicoWindow
-from linha_do_tempo import MainWindow as LinhaDoTempoWindow
-from religioes_faccoes import MainWindow as ReligioesFaccoesWindow
-from cidades_planetas import MainWindow as CidadesPlanetasWindow
-from theme import apply_theme, THEMES as AVAILABLE_THEMES
+from .demografico_medieval import MainWindow as DemograficoWindow
+from .personagens import MainWindow as PersonagensWindow
+from .economico import MainWindow as EconomicoWindow
+from .linha_do_tempo import MainWindow as LinhaDoTempoWindow
+from .religioes_faccoes import MainWindow as ReligioesFaccoesWindow
+from .cidades_planetas import MainWindow as CidadesPlanetasWindow
+from .theme import apply_theme, THEMES as AVAILABLE_THEMES
 
 class FavoriteFileSystemModel(QFileSystemModel):
     """File system model that highlights favorite paths."""
