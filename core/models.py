@@ -37,6 +37,9 @@ class Location(BaseEntity):
 class Faction(BaseEntity):
     allies: List[str] = Field(default_factory=list)
     enemies: List[str] = Field(default_factory=list)
+    crencas: str | None = None
+    ritos: List[str] = Field(default_factory=list)
+    areas_influencia: List[str] = Field(default_factory=list)
 
 
 class EconomyProfile(BaseEntity):

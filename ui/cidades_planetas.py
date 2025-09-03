@@ -12,6 +12,8 @@ from dataclasses import dataclass, field, asdict
 from typing import List, Dict
 import json
 import sys
+from pathlib import Path
+from itertools import combinations
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
@@ -22,6 +24,37 @@ from PyQt5.QtWidgets import (
 )
 
 from core.economia.perfis import EconomiaPerfil, apply_rules
+
+# Carrega dados de grupos para cálculo de tensões
+try:
+    _grupos_raw = json.loads(Path("grupos.json").read_text(encoding="utf-8"))
+    GRUPOS = {g["nome"]: g for g in _grupos_raw}
+except Exception:
+    GRUPOS = {}
+
+RELACOES_GRUPOS: Dict[frozenset[str], str] = {}
+for g in GRUPOS.values():
+    for rel in g.get("relacoes", []):
+        chave = frozenset((g["nome"], rel.get("grupo", "")))
+        RELACOES_GRUPOS[chave] = rel.get("relacao", "")
+
+
+def calcular_tensao(grupos: List[str]) -> str:
+    """Calcula nível de tensão entre grupos influentes."""
+    for a, b in combinations(grupos, 2):
+        rel = RELACOES_GRUPOS.get(frozenset((a, b)))
+        if rel == "inimigos":
+            return "alta"
+    return "baixa"
+
+
+def grupos_por_local(nome: str) -> List[str]:
+    """Retorna grupos que influenciam a localidade informada."""
+    saida = []
+    for gnome, gdata in GRUPOS.items():
+        if nome in gdata.get("areas_influencia", []):
+            saida.append(gnome)
+    return saida
 
 # ----------------------------- Estado -----------------------------
 @dataclass
@@ -40,6 +73,7 @@ class Localidade:
     distritos: List[Dict[str, str]] = field(default_factory=list)  # {nome, descricao}
     pontos_interesse: List[Dict[str, str]] = field(default_factory=list)  # {nome, descricao}
     perfil_economico: EconomiaPerfil = field(default_factory=EconomiaPerfil)
+    grupos: List[str] = field(default_factory=list)  # IDs de grupos com influência
 
 # ----------------------------- Páginas -----------------------------
 class PageBasico(QWidget):
@@ -86,22 +120,40 @@ class PageSociedade(QWidget):
         self.ed_gov = QLineEdit(self.l.governo)
         self.ed_eco = QLineEdit(self.l.economia)
         self.tx_notas = QTextEdit(self.l.notas)
+        if not self.l.grupos:
+            self.l.grupos = grupos_por_local(self.l.nome)
+        self.ed_grupos = QLineEdit(",".join(self.l.grupos))
+        self.lbl_tensao = QLabel("")
         form.addRow("Arquitetura:", self.ed_arq)
         form.addRow("Governo:", self.ed_gov)
         form.addRow("Economia:", self.ed_eco)
         form.addRow("Notas:", self.tx_notas)
+        form.addRow("Grupos (IDs):", self.ed_grupos)
+        form.addRow("Tensão:", self.lbl_tensao)
         layout.addLayout(form)
         btn = QPushButton("Salvar Sociedade")
         btn.clicked.connect(self.save)
         layout.addWidget(btn)
         layout.addStretch(1)
+        self._atualiza_tensao()
 
     def save(self):
         self.l.arquitetura = self.ed_arq.text().strip()
         self.l.governo = self.ed_gov.text().strip()
         self.l.economia = self.ed_eco.text().strip()
         self.l.notas = self.tx_notas.toPlainText().strip()
+        self.l.grupos = [g.strip() for g in self.ed_grupos.text().split(',') if g.strip()]
         self.on_change()
+        self._atualiza_tensao()
+
+    def _atualiza_tensao(self):
+        t = calcular_tensao(self.l.grupos)
+        if t == "alta":
+            self.lbl_tensao.setText("Alta")
+            self.lbl_tensao.setStyleSheet("color: red")
+        else:
+            self.lbl_tensao.setText("Baixa")
+            self.lbl_tensao.setStyleSheet("color: green")
 
 class PageDistritos(QWidget):
     def __init__(self, loc: Localidade, on_change):
