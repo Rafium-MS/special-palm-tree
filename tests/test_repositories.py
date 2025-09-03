@@ -8,21 +8,24 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from core.models import Character
-from infra.repositories import CharacterRepo
+from infra.repositories import CharacterRepository
 
 
-def test_character_repo_add_and_list(tmp_path, monkeypatch):
+def test_character_repo_create_and_list(tmp_path, monkeypatch):
     monkeypatch.setenv("APP_WORKSPACE", str(tmp_path))
     import config
-    import infra.db as db
+    import infra.db as _db
 
     importlib.reload(config)
-    importlib.reload(db)
+    importlib.reload(_db)
 
-    conn = db.connect()
-    repo = CharacterRepo(conn)
-    repo.add(Character(name="Eve", birth_year=-20))
+    with _db.transaction() as conn:
+        repo = CharacterRepository(conn)
+        char_id = repo.create(Character(name="Eve", birth_year=-20))
 
-    characters = repo.list()
-    assert any(c.name == "Eve" for c in characters)
+    with _db.transaction() as conn:
+        repo = CharacterRepository(conn)
+        character = repo.find(char_id)
+        assert character is not None and character.name == "Eve"
+        assert any(c.name == "Eve" for c in repo.list())
 

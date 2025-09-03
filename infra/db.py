@@ -5,6 +5,7 @@ import atexit
 import sqlite3
 from datetime import datetime
 from pathlib import Path
+from contextlib import contextmanager
 
 from config import settings
 
@@ -27,6 +28,24 @@ def connect(seed: bool = False) -> sqlite3.Connection:
     if seed:
         seed_demo(conn)
     return conn
+
+
+@contextmanager
+def transaction(seed: bool = False):
+    """Yield a database connection wrapped in a transaction.
+
+    Commits the transaction on successful exit and rolls back if an
+    exception occurs. A fresh connection is provided for each usage.
+    """
+    conn = connect(seed=seed)
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def _run_migrations(conn: sqlite3.Connection) -> None:
