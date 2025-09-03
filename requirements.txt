@@ -1,2 +1,4 @@
 PyQt5
 pyspellchecker
+pydantic
+python-dotenv

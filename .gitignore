@@ -4,3 +4,4 @@ world.db
 world_export.json
 data/__pycache__/
 /__pycache__
+.env
