@@ -85,6 +85,7 @@ from .linha_do_tempo import MainWindow as LinhaDoTempoWindow
 from .religioes_faccoes import MainWindow as ReligioesFaccoesWindow
 from .cidades_planetas import MainWindow as CidadesPlanetasWindow
 from .theme import apply_theme, THEMES as AVAILABLE_THEMES
+from icons import icon
 
 class FavoriteFileSystemModel(QFileSystemModel):
     """File system model that highlights favorite paths."""
