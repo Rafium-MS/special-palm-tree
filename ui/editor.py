@@ -87,11 +87,8 @@ from .religioes_faccoes import MainWindow as ReligioesFaccoesWindow
 from .cidades_planetas import MainWindow as CidadesPlanetasWindow
 from .theme import apply_theme, load_theme, THEMES as AVAILABLE_THEMES
 from icons import icon
-<<<<<<< Updated upstream
 from core.timeline.service import timeline_service
-=======
 from modulo_linguas import ConlangWidget
->>>>>>> Stashed changes
 
 class FavoriteFileSystemModel(QFileSystemModel):
     """File system model that highlights favorite paths."""

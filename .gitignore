@@ -9,3 +9,4 @@ data/__pycache__/
 /ui/__pycache__
 /core/__pycache__
 ui/editor.py
+/core/timeline/__pycache__
