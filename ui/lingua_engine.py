@@ -2,7 +2,11 @@
 from __future__ import annotations
 import re
 from typing import Iterable, List, Dict
-from lingua_models import Rule
+# Import models using a relative import so this module works regardless of how
+# the package is executed.  Using an absolute import expects `lingua_models`
+# to be on `sys.path` and raises `ModuleNotFoundError` when running the package
+# directly.
+from .lingua_models import Rule
 
 def apply_rules(text: str, rules: Iterable[Rule]) -> str:
     out = text
