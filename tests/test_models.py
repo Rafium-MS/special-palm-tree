@@ -5,7 +5,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from core.models import Character, TimelineEvent, validate_event_characters
+from core.models import Character, TimelineEvent
+from core.services import validate_event_characters
 
 
 def test_validate_event_characters_allows_valid_event() -> None:

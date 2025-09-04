@@ -1,4 +1,4 @@
-from shared.text_utils import simple_diff, slugify
+from shared.utils.text import simple_diff, slugify
 
 
 def test_slugify_basic():

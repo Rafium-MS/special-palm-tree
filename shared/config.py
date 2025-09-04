@@ -1,50 +1,86 @@
-import json
+"""Configuration management using pydantic models."""
+
+from __future__ import annotations
+
+from pathlib import Path
 from typing import Any, Dict
+
+from pydantic import BaseModel, Field
 
 from .constants import CONFIG_FILE
 
 
-def load_config() -> Dict[str, Any]:
-    """Load configuration from CONFIG_FILE ensuring default structure."""
-    if CONFIG_FILE.exists():
+class UIConfig(BaseModel):
+    theme: str = "light"
+
+
+class ProjectConfig(BaseModel):
+    favorites: list[str] = Field(default_factory=list)
+    tags: Dict[str, list[str]] = Field(default_factory=dict)
+    shortcuts: Dict[str, str] = Field(default_factory=dict)
+    line_spacing: float = 1.0
+    daily_word_goal: int = 0
+    open_panels: list[str] = Field(default_factory=list)
+    editor_width: int = 0
+    last_session: Dict[str, Any] = Field(default_factory=dict)
+    autosave_interval: int = 0
+    autosave_dir: str = ""
+    font_family: str = ""
+    font_size: int = 0
+
+
+class AppConfig(BaseModel):
+    ui: UIConfig = UIConfig()
+    last_project: str = ""
+    projects: Dict[str, ProjectConfig] = Field(default_factory=dict)
+
+
+class ConfigManager:
+    """Load and persist application configuration."""
+
+    def __init__(self, path: Path = CONFIG_FILE):
+        self.path = path
+        self._config = AppConfig()
+
+    @property
+    def config(self) -> AppConfig:
+        return self._config
+
+    def load(self) -> AppConfig:
+        """Load configuration from disk, creating defaults when necessary."""
+        if self.path.exists():
+            try:
+                self._config = AppConfig.model_validate_json(
+                    self.path.read_text(encoding="utf-8")
+                )
+            except Exception:
+                self._config = AppConfig()
+        else:
+            self._config = AppConfig()
+        return self._config
+
+    def save(self) -> None:
+        """Persist current configuration to disk."""
         try:
-            cfg: Dict[str, Any] = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+            self.path.write_text(
+                self._config.model_dump_json(indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
         except Exception:
-            cfg = {}
-    else:
-        cfg = {}
+            pass
 
-    ui = cfg.setdefault("ui", {})
-    ui.setdefault("theme", "light")
-    cfg.setdefault("last_project", "")
-    cfg.setdefault("projects", {})
-    return cfg
+    def get_project(self, project_id: str) -> ProjectConfig:
+        """Return configuration for ``project_id`` creating defaults if missing."""
+        return self._config.projects.setdefault(project_id, ProjectConfig())
 
 
-def get_project_config(cfg: Dict[str, Any], project_id: str) -> Dict[str, Any]:
-    """Return configuration dictionary for *project_id* ensuring defaults."""
-    projects = cfg.setdefault("projects", {})
-    project = projects.setdefault(project_id, {})
-    project.setdefault("favorites", [])
-    project.setdefault("tags", {})
-    project.setdefault("shortcuts", {})
-    project.setdefault("line_spacing", 1.0)
-    project.setdefault("daily_word_goal", 0)
-    project.setdefault("open_panels", [])
-    project.setdefault("editor_width", 0)
-    project.setdefault("last_session", {})
-    project.setdefault("autosave_interval", 0)
-    project.setdefault("autosave_dir", "")
-    project.setdefault("font_family", "")
-    project.setdefault("font_size", 0)
-    return project
+config_manager = ConfigManager()
 
+__all__ = [
+    "UIConfig",
+    "ProjectConfig",
+    "AppConfig",
+    "ConfigManager",
+    "config_manager",
+]
 
-def save_config(cfg: Dict[str, Any]) -> None:
-    """Persist *cfg* to CONFIG_FILE."""
-    try:
-        CONFIG_FILE.write_text(
-            json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8"
-        )
-    except Exception:
-        pass

@@ -1,6 +1,6 @@
 from datetime import date
 
-from shared.date_utils import days_between, format_date, parse_date
+from shared.utils.dates import days_between, format_date, parse_date
 
 
 def test_parse_and_format():
