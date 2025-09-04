@@ -11,3 +11,5 @@ data/__pycache__/
 /core/timeline/__pycache__
 /core/economia/__pycache__
 linguas.db
+/app/__pycache__
+/shared/utils/__pycache__
