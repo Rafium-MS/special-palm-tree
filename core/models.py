@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 
 
 class BaseEntity(BaseModel):
@@ -60,7 +60,8 @@ class TimelineEvent(BaseModel):
     location_ids: List[str] = Field(default_factory=list)
     tags: List[str] = Field(default_factory=list)
 
-    @validator("scope")
+    @field_validator("scope")
+    @classmethod
     def _validate_scope(cls, value: str) -> str:
         allowed = {"local", "personagem", "mundo"}
         if value not in allowed:
