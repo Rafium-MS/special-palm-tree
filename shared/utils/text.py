@@ -1,10 +1,12 @@
+"""Text-related helper functions."""
+
 import re
 import unicodedata
 from collections import Counter
 from difflib import ndiff
 from pathlib import Path
 
-from .constants import DEFAULT_WORKSPACE, SUPPORTED_TEXT_EXTS
+from shared.constants import DEFAULT_WORKSPACE, SUPPORTED_TEXT_EXTS
 
 
 def compute_stats(text: str, wpm: int = 200, top_n: int = 5):
@@ -94,9 +96,15 @@ def slugify(value: str) -> str:
 
 
 def simple_diff(a: str, b: str) -> list[str]:
-    """Return a simple line-based diff between *a* and *b*.
-
-    Lines starting with ``?`` produced by :func:`difflib.ndiff` are
-    discarded to keep the output compact.
-    """
+    """Return a simple line-based diff between *a* and *b*."""
     return [line for line in ndiff(a.splitlines(), b.splitlines()) if not line.startswith("?")]
+
+
+__all__ = [
+    "compute_stats",
+    "read_file_text",
+    "search_workspace",
+    "slugify",
+    "simple_diff",
+]
+
