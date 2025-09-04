@@ -5,7 +5,7 @@ from PyQt5.QtGui import QIcon, QPixmap, QColor, QPainter
 from PyQt5.QtCore import Qt, QSize
 from PyQt5.QtSvg import QSvgRenderer
 
-BASE = Path(__file__).parent / "assets" / "icons" / "phosphor"
+BASE = Path(__file__).resolve().parent.parent / "assets" / "icons" / "phosphor" / "SVGs"
 DEFAULT_WEIGHT = "regular"
 
 ALIASES = {

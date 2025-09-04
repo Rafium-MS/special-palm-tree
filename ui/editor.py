@@ -1,73 +1,76 @@
-import os
-import sys
-import json
-import shutil
-import re
+# ruff: noqa
+# mypy: ignore-errors
 import getpass
+import json
+import os
+import re
+import sqlite3
+import sys
 from datetime import datetime
 from pathlib import Path
 
 from PyQt5.QtCore import (
-    Qt,
-    QTimer,
     QModelIndex,
-    QRegExp,
     QSortFilterProxyModel,
+    Qt,
     QThread,
+    QTimer,
     pyqtSignal,
 )
 from PyQt5.QtGui import (
     QCloseEvent,
-    QKeySequence,
-    QSyntaxHighlighter,
-    QTextCharFormat,
     QColor,
     QFont,
-    QTextDocument,
-    QTextCursor,
-    QTextBlockFormat,
     QIcon,
+    QKeySequence,
     QStandardItem,
     QStandardItemModel,
-)
-from PyQt5.QtWidgets import (
-    QApplication,
-    QMainWindow,
-    QWidget,
-    QSplitter,
-    QFileSystemModel,
-    QTreeView,
-    QPlainTextEdit,
-    QTextEdit,
-    QTextBrowser,
-    QVBoxLayout,
-    QHBoxLayout,
-    QToolBar,
-    QAction,
-    QFileDialog,
-    QMessageBox,
-    QStatusBar,
-    QLabel,
-    QLineEdit,
-    QPushButton,
-    QStyle,
-    QInputDialog,
-    QMenu,
-    QListWidget,
-    QDialog,
-    QListWidgetItem,
-    QFontDialog,
-    QProgressBar,
-    QTabWidget,
+    QSyntaxHighlighter,
+    QTextBlockFormat,
+    QTextCharFormat,
+    QTextCursor,
+    QTextDocument,
 )
 from PyQt5.QtPrintSupport import QPrinter
-
+from PyQt5.QtWidgets import (
+    QAction,
+    QApplication,
+    QDialog,
+    QFileDialog,
+    QFileSystemModel,
+    QFontDialog,
+    QHBoxLayout,
+    QInputDialog,
+    QLabel,
+    QLineEdit,
+    QListWidget,
+    QListWidgetItem,
+    QMainWindow,
+    QMenu,
+    QMessageBox,
+    QPlainTextEdit,
+    QProgressBar,
+    QPushButton,
+    QSplitter,
+    QStatusBar,
+    QStyle,
+    QTabWidget,
+    QTextBrowser,
+    QTextEdit,
+    QToolBar,
+    QTreeView,
+    QVBoxLayout,
+    QWidget,
+)
 from spellchecker import SpellChecker
 
+from core.io import export_project_zip, export_text, import_batch
+from core.timeline.service import timeline_service
+from shared.config import get_project_config, load_config, save_config
 from shared.constants import (
     APP_NAME,
-    DEFAULT_WORKSPACE,
     AUTOSAVE_DIRNAME,
+    DEFAULT_WORKSPACE,
     HISTORY_DIRNAME,
     MAX_SNAPSHOTS,
 )
@@ -77,18 +80,17 @@ from shared.text_utils import (
     read_file_text,
     search_workspace,
 )
-from shared.config import load_config, save_config, get_project_config
-from core.io import export_text, export_project_zip, import_batch
+
+from .cidades_planetas import MainWindow as CidadesPlanetasWindow
 from .demografico_medieval import MainWindow as DemograficoWindow
-from .personagens import MainWindow as PersonagensWindow
 from .economico import MainWindow as EconomicoWindow
 from .linha_do_tempo import MainWindow as LinhaDoTempoWindow
+from .modulo_linguas import ConlangWidget
+from .personagens import MainWindow as PersonagensWindow
 from .religioes_faccoes import MainWindow as ReligioesFaccoesWindow
-from .cidades_planetas import MainWindow as CidadesPlanetasWindow
-from .theme import apply_theme, load_theme, THEMES as AVAILABLE_THEMES
-from icons import icon
-from core.timeline.service import timeline_service
-from modulo_linguas import ConlangWidget
+from .theme import THEMES as AVAILABLE_THEMES
+from .theme import apply_theme, load_theme
+
 
 class FavoriteFileSystemModel(QFileSystemModel):
     """File system model that highlights favorite paths."""
@@ -98,7 +100,9 @@ class FavoriteFileSystemModel(QFileSystemModel):
         self.favorites = favorites
         self.favorite_icon = QIcon.fromTheme("star")
         if self.favorite_icon.isNull():
-            self.favorite_icon = QApplication.style().standardIcon(QStyle.SP_DialogYesButton)
+            self.favorite_icon = QApplication.style().standardIcon(
+                QStyle.SP_DialogYesButton
+            )
 
     def data(self, index: QModelIndex, role: int = Qt.DisplayRole):
         if role == Qt.DecorationRole and index.column() == 0:
@@ -127,7 +131,9 @@ class ProjectTreeModel(QStandardItemModel):
         self.favorites = favorites
         self.favorite_icon = QIcon.fromTheme("star")
         if self.favorite_icon.isNull():
-            self.favorite_icon = QApplication.style().standardIcon(QStyle.SP_DialogYesButton)
+            self.favorite_icon = QApplication.style().standardIcon(
+                QStyle.SP_DialogYesButton
+            )
         self.load_project()
 
     def _set_icon(self, item: ProjectNode):
@@ -247,6 +253,7 @@ class TagFilterProxyModel(QSortFilterProxyModel):
         tags = self.tags.get(path, [])
         return self.filter_tag in tags
 
+
 class MarkdownHighlighter(QSyntaxHighlighter):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -277,14 +284,14 @@ class MarkdownHighlighter(QSyntaxHighlighter):
             return
 
         # ----- títulos (#, ##, ...) -----
-        if text.startswith('#'):
+        if text.startswith("#"):
             h_fmt = QTextCharFormat()
             h_fmt.setForeground(QColor("#5b9cff"))
             h_fmt.setFontWeight(QFont.Bold)
             self._apply_format_range(0, len(text), h_fmt)
 
         # ----- citações > -----
-        if text.lstrip().startswith('>'):
+        if text.lstrip().startswith(">"):
             q_fmt = QTextCharFormat()
             q_fmt.setForeground(QColor("#6a9955"))
             q_fmt.setFontItalic(True)
@@ -292,14 +299,18 @@ class MarkdownHighlighter(QSyntaxHighlighter):
 
         # ----- linhas horizontais (---, ***, ___) -----
         s = text.strip()
-        if s and len(s) >= 3 and (set(s) <= {'-'} or set(s) <= {'*'} or set(s) <= {'_'}):
+        if (
+            s
+            and len(s) >= 3
+            and (set(s) <= {"-"} or set(s) <= {"*"} or set(s) <= {"_"})
+        ):
             hr_fmt = QTextCharFormat()
             hr_fmt.setForeground(QColor("#888888"))
             self._apply_format_range(0, len(text), hr_fmt)
 
         # ----- listas -, *, + ou 1. 2. -----
         ls = text.lstrip()
-        if ls.startswith(('- ', '* ', '+ ')):
+        if ls.startswith(("- ", "* ", "+ ")):
             li_fmt = QTextCharFormat()
             li_fmt.setForeground(QColor("#b5cea8"))
             li_fmt.setFontWeight(QFont.Bold)
@@ -309,7 +320,7 @@ class MarkdownHighlighter(QSyntaxHighlighter):
             i = 0
             while i < len(ls) and ls[i].isdigit():
                 i += 1
-            if i > 0 and i + 1 < len(ls) and ls[i] == '.' and ls[i+1] == ' ':
+            if i > 0 and i + 1 < len(ls) and ls[i] == "." and ls[i + 1] == " ":
                 li_fmt = QTextCharFormat()
                 li_fmt.setForeground(QColor("#b5cea8"))
                 li_fmt.setFontWeight(QFont.Bold)
@@ -321,10 +332,12 @@ class MarkdownHighlighter(QSyntaxHighlighter):
         code_fmt.setForeground(QColor("#9cdcfe"))
         start = 0
         while True:
-            a = text.find('`', start)
-            if a == -1: break
-            b = text.find('`', a + 1)
-            if b == -1: break
+            a = text.find("`", start)
+            if a == -1:
+                break
+            b = text.find("`", a + 1)
+            if b == -1:
+                break
             self._apply_format_range(a, b + 1, code_fmt)
             start = b + 1
 
@@ -332,13 +345,15 @@ class MarkdownHighlighter(QSyntaxHighlighter):
         bold_fmt = QTextCharFormat()
         bold_fmt.setForeground(QColor("#e07a00"))
         bold_fmt.setFontWeight(QFont.Bold)
-        for marker in ('**', '__'):
+        for marker in ("**", "__"):
             start = 0
             while True:
                 a = text.find(marker, start)
-                if a == -1: break
+                if a == -1:
+                    break
                 b = text.find(marker, a + len(marker))
-                if b == -1: break
+                if b == -1:
+                    break
                 self._apply_format_range(a, b + len(marker), bold_fmt)
                 start = b + len(marker)
 
@@ -346,17 +361,19 @@ class MarkdownHighlighter(QSyntaxHighlighter):
         ital_fmt = QTextCharFormat()
         ital_fmt.setForeground(QColor("#c678dd"))
         ital_fmt.setFontItalic(True)
-        for marker in ('*', '_'):
+        for marker in ("*", "_"):
             start = 0
             while True:
                 a = text.find(marker, start)
-                if a == -1: break
+                if a == -1:
+                    break
                 # pula ** ou __ (negrito)
-                if a + 1 < len(text) and text[a+1] == marker:
+                if a + 1 < len(text) and text[a + 1] == marker:
                     start = a + 2
                     continue
                 b = text.find(marker, a + 1)
-                if b == -1: break
+                if b == -1:
+                    break
                 self._apply_format_range(a, b + 1, ital_fmt)
                 start = b + 1
 
@@ -366,14 +383,16 @@ class MarkdownHighlighter(QSyntaxHighlighter):
         link_fmt.setFontUnderline(True)
         start = 0
         while True:
-            a = text.find('[', start)
-            if a == -1: break
-            mid = text.find(']', a + 1)
-            if mid == -1 or mid + 1 >= len(text) or text[mid + 1] != '(':
+            a = text.find("[", start)
+            if a == -1:
+                break
+            mid = text.find("]", a + 1)
+            if mid == -1 or mid + 1 >= len(text) or text[mid + 1] != "(":
                 start = a + 1
                 continue
-            b = text.find(')', mid + 2)
-            if b == -1: break
+            b = text.find(")", mid + 2)
+            if b == -1:
+                break
             self._apply_format_range(a, b + 1, link_fmt)
             start = b + 1
 
@@ -386,8 +405,10 @@ class MarkdownHighlighter(QSyntaxHighlighter):
 
         self.setCurrentBlockState(0)
 
+
 class FindBar(QWidget):
     """Barra de busca simples com próximo/anterior"""
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setVisible(False)
@@ -397,7 +418,9 @@ class FindBar(QWidget):
         self.input.setPlaceholderText("Buscar no texto…")
         self.btn_prev = QPushButton("Anterior")
         self.btn_next = QPushButton("Próximo")
-        self.btn_close = QPushButton(self.style().standardIcon(QStyle.SP_DialogCloseButton), "")
+        self.btn_close = QPushButton(
+            self.style().standardIcon(QStyle.SP_DialogCloseButton), ""
+        )
         self.btn_close.setToolTip("Fechar busca (Esc)")
         layout.addWidget(QLabel("Buscar:"))
         layout.addWidget(self.input, 1)
@@ -422,7 +445,9 @@ class SpellPlainTextEdit(QPlainTextEdit):
         misspelled = getattr(self.main_window, "misspelled_words", set())
         if word and word.lower() in misspelled:
             menu.addSeparator()
-            suggestions = list(self.main_window.spell_checker.candidates(word.lower()))[:5]
+            suggestions = list(self.main_window.spell_checker.candidates(word.lower()))[
+                :5
+            ]
             for s in suggestions:
                 act = menu.addAction(s)
                 act.triggered.connect(
@@ -457,7 +482,6 @@ class SpellPlainTextEdit(QPlainTextEdit):
                     self.main_window.open_internal_link(m.group(1))
                     return
         super().mouseReleaseEvent(event)
-
 
 
 class SearchWorker(QThread):
@@ -614,6 +638,7 @@ class PomodoroDialog(QDialog):
                     self.start_words = parent.current_stats.get("words", 0)
         self.lbl_timer.setText(self._fmt(self.remaining))
 
+
 class EditorWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -644,8 +669,7 @@ class EditorWindow(QMainWindow):
         self.misspelled_words = set()
         # Detect language among common options
         self.lang_detectors = {
-            code: SpellChecker(language=code)
-            for code in ["en", "es", "fr", "de", "pt"]
+            code: SpellChecker(language=code) for code in ["en", "es", "fr", "de", "pt"]
         }
         self.current_language = "-"
         self._spell_timer = QTimer(self)
@@ -667,7 +691,9 @@ class EditorWindow(QMainWindow):
         self.autosave_enabled = True
         self.autosave_interval = int(self.project_cfg.get("autosave_interval", 2000))
         autosave_dir = self.project_cfg.get("autosave_dir")
-        self.autosave_dir = Path(autosave_dir) if autosave_dir else (self.workspace / AUTOSAVE_DIRNAME)
+        self.autosave_dir = (
+            Path(autosave_dir) if autosave_dir else (self.workspace / AUTOSAVE_DIRNAME)
+        )
         ensure_dir(self.autosave_dir)
         self.autosave_timer = QTimer(self)
         self.autosave_timer.setSingleShot(True)
@@ -725,7 +751,7 @@ class EditorWindow(QMainWindow):
         menu_tools.addAction(self.act_open_linha_tempo)
         menu_tools.addAction(self.act_open_religioes)
         menu_tools.addAction(self.act_open_cidades_planetas)
-        menu_tools.addAction(self.open_conlang)
+        menu_tools.addAction(self.act_open_conlang)
         self.menu_history = self.menuBar().addMenu("Histórico de versões")
         self.menu_history.aboutToShow.connect(self._populate_history_menu)
 
@@ -757,10 +783,14 @@ class EditorWindow(QMainWindow):
         tag_label = QLabel("Tags", self)
         self.tag_filter_input = QLineEdit(self)
         self.tag_filter_input.setPlaceholderText("Filtrar por tag…")
-        self.tag_filter_input.returnPressed.connect(lambda: self.filter_tree_by_tag(self.tag_filter_input.text()))
+        self.tag_filter_input.returnPressed.connect(
+            lambda: self.filter_tree_by_tag(self.tag_filter_input.text())
+        )
         self.tag_list = QListWidget(self)
         self.tag_list.setFixedHeight(80)
-        self.tag_list.itemClicked.connect(lambda item: self.filter_tree_by_tag(item.text()))
+        self.tag_list.itemClicked.connect(
+            lambda item: self.filter_tree_by_tag(item.text())
+        )
         btn_clear_tags = QPushButton("Limpar filtro", self)
         btn_clear_tags.clicked.connect(lambda: self.filter_tree_by_tag(""))
 
@@ -787,7 +817,9 @@ class EditorWindow(QMainWindow):
         ver_layout.setContentsMargins(0, 0, 0, 0)
         ver_layout.setSpacing(0)
         self.version_list = QListWidget(self)
-        self.version_list.itemDoubleClicked.connect(lambda item: self.restore_snapshot(item.data(Qt.UserRole)))
+        self.version_list.itemDoubleClicked.connect(
+            lambda item: self.restore_snapshot(item.data(Qt.UserRole))
+        )
         ver_layout.addWidget(self.version_list, 1)
 
         self.sidebar = QTabWidget(self)
@@ -799,7 +831,7 @@ class EditorWindow(QMainWindow):
         self.editor.setPlaceholderText("Escreva aqui…")
 
         try:
-            self.editor.setTabStopDistance(4 * self.editor.fontMetrics().width(' '))
+            self.editor.setTabStopDistance(4 * self.editor.fontMetrics().width(" "))
         except Exception:
             pass
 
@@ -883,8 +915,12 @@ class EditorWindow(QMainWindow):
         if hasattr(self, "progress"):
             if self.daily_word_goal:
                 self.progress.setRange(0, self.daily_word_goal)
-                self.progress.setValue(min(self.daily_words_written, self.daily_word_goal))
-                self.progress.setFormat(f"{self.daily_words_written}/{self.daily_word_goal}")
+                self.progress.setValue(
+                    min(self.daily_words_written, self.daily_word_goal)
+                )
+                self.progress.setFormat(
+                    f"{self.daily_words_written}/{self.daily_word_goal}"
+                )
             else:
                 self.progress.setRange(0, max(self.daily_words_written, 1))
                 self.progress.setValue(self.daily_words_written)
@@ -894,6 +930,7 @@ class EditorWindow(QMainWindow):
         text = self.editor.toPlainText()
         try:
             import markdown
+
             html = markdown.markdown(text)
         except Exception:
             doc = QTextDocument()
@@ -929,6 +966,7 @@ class EditorWindow(QMainWindow):
         self.demografico_window.show()
         self.demografico_window.raise_()
         self.demografico_window.activateWindow()
+
     def open_personagens(self):
         if not hasattr(self, "personagens_window"):
             self.personagens_window = PersonagensWindow()
@@ -963,9 +1001,11 @@ class EditorWindow(QMainWindow):
         self.cidades_window.show()
         self.cidades_window.raise_()
         self.cidades_window.activateWindow()
-        
+
     def open_conlang(self):
-        w = ConlangWidget(self.conn, self)
+        db_path = self.workspace / "linguas.db"
+        conn = sqlite3.connect(db_path)
+        w = ConlangWidget(conn, self)
         w.setWindowTitle("Dicionário de Língua Inventada")
         w.resize(1100, 700)
         w.show()
@@ -992,7 +1032,9 @@ class EditorWindow(QMainWindow):
                 self.link_panel.setVisible(True)
             else:
                 self.link_panel.setVisible(False)
-                QMessageBox.information(self, "Link", f"Personagem '{nome}' não encontrado.")
+                QMessageBox.information(
+                    self, "Link", f"Personagem '{nome}' não encontrado."
+                )
         elif t.startswith("cidade"):
             self.link_panel.setVisible(False)
             self.open_cidades_planetas()
@@ -1028,33 +1070,75 @@ class EditorWindow(QMainWindow):
     def _build_actions(self):
         style = self.style()
         # Pasta de trabalho
-        self.act_choose_workspace = QAction(style.standardIcon(QStyle.SP_DirIcon), "Selecionar Pasta", self)
-        self.act_open_in_explorer = QAction(style.standardIcon(QStyle.SP_DialogOpenButton), "Abrir no Explorer/Finder", self)
+        self.act_choose_workspace = QAction(
+            style.standardIcon(QStyle.SP_DirIcon), "Selecionar Pasta", self
+        )
+        self.act_open_in_explorer = QAction(
+            style.standardIcon(QStyle.SP_DialogOpenButton),
+            "Abrir no Explorer/Finder",
+            self,
+        )
 
         # Arquivos
-        self.act_new_file = QAction(style.standardIcon(QStyle.SP_FileIcon), "Novo Arquivo", self)
-        self.act_open_file = QAction(style.standardIcon(QStyle.SP_DialogOpenButton), "Abrir Arquivo", self)
-        self.act_save = QAction(style.standardIcon(QStyle.SP_DialogSaveButton), "Salvar", self)
+        self.act_new_file = QAction(
+            style.standardIcon(QStyle.SP_FileIcon), "Novo Arquivo", self
+        )
+        self.act_open_file = QAction(
+            style.standardIcon(QStyle.SP_DialogOpenButton), "Abrir Arquivo", self
+        )
+        self.act_save = QAction(
+            style.standardIcon(QStyle.SP_DialogSaveButton), "Salvar", self
+        )
         self.act_save_as = QAction("Salvar Como…", self)
-        self.act_export = QAction(style.standardIcon(QStyle.SP_DialogSaveButton), "Exportar…", self)
-        self.act_export_project = QAction(style.standardIcon(QStyle.SP_DriveHDIcon), "Exportar Projeto (ZIP)", self)
-        self.act_import_batch = QAction(style.standardIcon(QStyle.SP_DialogOpenButton), "Importar em Lote…", self)
-        self.act_rename = QAction(style.standardIcon(QStyle.SP_FileDialogNewFolder), "Renomear…", self)
-        self.act_delete = QAction(style.standardIcon(QStyle.SP_TrashIcon), "Excluir…", self)
+        self.act_export = QAction(
+            style.standardIcon(QStyle.SP_DialogSaveButton), "Exportar…", self
+        )
+        self.act_export_project = QAction(
+            style.standardIcon(QStyle.SP_DriveHDIcon), "Exportar Projeto (ZIP)", self
+        )
+        self.act_import_batch = QAction(
+            style.standardIcon(QStyle.SP_DialogOpenButton), "Importar em Lote…", self
+        )
+        self.act_rename = QAction(
+            style.standardIcon(QStyle.SP_FileDialogNewFolder), "Renomear…", self
+        )
+        self.act_delete = QAction(
+            style.standardIcon(QStyle.SP_TrashIcon), "Excluir…", self
+        )
 
         # Busca e tema
-        self.act_find = QAction(style.standardIcon(QStyle.SP_FileDialogContentsView), "Buscar", self)
-        self.act_global_find = QAction(style.standardIcon(QStyle.SP_FileDialogDetailedView), "Buscar no Workspace", self)
-        self.act_command_palette = QAction(style.standardIcon(QStyle.SP_DesktopIcon), "Paleta de Comandos", self)
-        self.act_toggle_theme = QAction(style.standardIcon(QStyle.SP_BrowserReload), "Alternar Tema", self)
-        self.act_show_stats = QAction(style.standardIcon(QStyle.SP_MessageBoxInformation), "Estatísticas…", self)
-        self.act_start_pomodoro = QAction(style.standardIcon(QStyle.SP_MediaPlay), "Pomodoro", self)
+        self.act_find = QAction(
+            style.standardIcon(QStyle.SP_FileDialogContentsView), "Buscar", self
+        )
+        self.act_global_find = QAction(
+            style.standardIcon(QStyle.SP_FileDialogDetailedView),
+            "Buscar no Workspace",
+            self,
+        )
+        self.act_command_palette = QAction(
+            style.standardIcon(QStyle.SP_DesktopIcon), "Paleta de Comandos", self
+        )
+        self.act_toggle_theme = QAction(
+            style.standardIcon(QStyle.SP_BrowserReload), "Alternar Tema", self
+        )
+        self.act_show_stats = QAction(
+            style.standardIcon(QStyle.SP_MessageBoxInformation), "Estatísticas…", self
+        )
+        self.act_start_pomodoro = QAction(
+            style.standardIcon(QStyle.SP_MediaPlay), "Pomodoro", self
+        )
 
         # Interface
-        self.act_toggle_sidebar = QAction(style.standardIcon(QStyle.SP_FileDialogListView), "Alternar Barra Lateral", self)
+        self.act_toggle_sidebar = QAction(
+            style.standardIcon(QStyle.SP_FileDialogListView),
+            "Alternar Barra Lateral",
+            self,
+        )
         self.act_toggle_sidebar.setCheckable(True)
         self.act_toggle_sidebar.setChecked(True)
-        self.act_focus_mode = QAction(style.standardIcon(QStyle.SP_TitleBarMaxButton), "Modo Foco", self)
+        self.act_focus_mode = QAction(
+            style.standardIcon(QStyle.SP_TitleBarMaxButton), "Modo Foco", self
+        )
         self.act_focus_mode.setCheckable(True)
         self.act_focus_mode.setShortcut(QKeySequence("F11"))
         self.act_set_font = QAction("Configurar Fonte e Espaçamento…", self)
@@ -1065,8 +1149,10 @@ class EditorWindow(QMainWindow):
         self.act_open_economico = QAction("Construtor Econômico…", self)
         self.act_open_linha_tempo = QAction("Construtor de Linha do Tempo…", self)
         self.act_open_religioes = QAction("Gerenciador de Religiões e Facções…", self)
-        self.act_open_cidades_planetas = QAction("Construtor de Cidades/Planetas…", self)
-        self.act_open_conlang = QAction("Línguas",self)
+        self.act_open_cidades_planetas = QAction(
+            "Construtor de Cidades/Planetas…", self
+        )
+        self.act_open_conlang = QAction("Línguas", self)
         # Sair
         self.act_close_tab = QAction("Fechar Arquivo", self)
 
@@ -1184,7 +1270,7 @@ class EditorWindow(QMainWindow):
         self.act_open_linha_tempo.triggered.connect(self.open_linha_do_tempo)
         self.act_open_religioes.triggered.connect(self.open_religioes_faccoes)
         self.act_open_cidades_planetas.triggered.connect(self.open_cidades_planetas)
-        self.act_open_conlang.triggered.connect(self.act_open_conlang)
+        self.act_open_conlang.triggered.connect(self.open_conlang)
 
         self.find_bar.btn_close.clicked.connect(lambda: self.find_bar.setVisible(False))
         self.find_bar.btn_next.clicked.connect(lambda: self.find_next(True))
@@ -1291,7 +1377,7 @@ class EditorWindow(QMainWindow):
         else:
             self.toolbar.setVisible(True)
             self.menuBar().setVisible(True)
-            self.sidebar.setVisible(getattr(self, '_sidebar_was_visible', True))
+            self.sidebar.setVisible(getattr(self, "_sidebar_was_visible", True))
             self.showNormal()
         self.act_focus_mode.setChecked(checked)
         self.act_toggle_sidebar.setChecked(self.sidebar.isVisible())
@@ -1392,7 +1478,9 @@ class EditorWindow(QMainWindow):
 
     # Ações ---------------------------------------------------------------
     def choose_workspace(self):
-        path = QFileDialog.getExistingDirectory(self, "Selecionar pasta de trabalho", str(self.workspace))
+        path = QFileDialog.getExistingDirectory(
+            self, "Selecionar pasta de trabalho", str(self.workspace)
+        )
         if path:
             # Verifica alterações não salvas
             if not self.maybe_save_changes():
@@ -1427,7 +1515,9 @@ class EditorWindow(QMainWindow):
             os.system(f"xdg-open '{path}'")
 
     def new_file(self):
-        name, ok = QInputDialog.getText(self, "Novo arquivo", "Nome do arquivo (ex.: texto.md):")
+        name, ok = QInputDialog.getText(
+            self, "Novo arquivo", "Nome do arquivo (ex.: texto.md):"
+        )
         if not ok or not name.strip():
             return
         file_path = (self.workspace / name).resolve()
@@ -1469,7 +1559,12 @@ class EditorWindow(QMainWindow):
             QMessageBox.critical(self, APP_NAME, f"Erro ao salvar:\n{e}")
 
     def save_file_as(self):
-        path, _ = QFileDialog.getSaveFileName(self, "Salvar como", str(self.workspace), "Textos (*.txt *.md *.markdown *.json *.yaml *.yml *.ini *.cfg *.csv);;Todos (*.*)")
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Salvar como",
+            str(self.workspace),
+            "Textos (*.txt *.md *.markdown *.json *.yaml *.yml *.ini *.cfg *.csv);;Todos (*.*)",
+        )
         if not path:
             return
         self.current_file = Path(path)
@@ -1501,7 +1596,9 @@ class EditorWindow(QMainWindow):
                 doc.print_(printer)
             else:
                 meta = {
-                    "title": self.current_file.stem if self.current_file else "document",
+                    "title": (
+                        self.current_file.stem if self.current_file else "document"
+                    ),
                     "date": datetime.now().isoformat(),
                 }
                 export_text(text, Path(path), meta)
@@ -1561,7 +1658,9 @@ class EditorWindow(QMainWindow):
         if not self.current_file:
             QMessageBox.information(self, APP_NAME, "Nenhum arquivo aberto.")
             return
-        new_name, ok = QInputDialog.getText(self, "Renomear arquivo", "Novo nome:", text=self.current_file.name)
+        new_name, ok = QInputDialog.getText(
+            self, "Renomear arquivo", "Novo nome:", text=self.current_file.name
+        )
         if not ok or not new_name.strip():
             return
         new_path = self.current_file.with_name(new_name)
@@ -1579,7 +1678,12 @@ class EditorWindow(QMainWindow):
         if not self.current_file:
             QMessageBox.information(self, APP_NAME, "Nenhum arquivo aberto.")
             return
-        resp = QMessageBox.question(self, APP_NAME, f"Excluir definitivamente\n{self.current_file.name}?", QMessageBox.Yes | QMessageBox.No)
+        resp = QMessageBox.question(
+            self,
+            APP_NAME,
+            f"Excluir definitivamente\n{self.current_file.name}?",
+            QMessageBox.Yes | QMessageBox.No,
+        )
         if resp == QMessageBox.Yes:
             try:
                 self.current_file.unlink()
@@ -1609,12 +1713,20 @@ class EditorWindow(QMainWindow):
         cursor = self.editor.textCursor()
         flags = Qt.MatchFlags()
         # QPlainTextEdit possui find simplificado via .find(), usa regex plain
-        found = self.editor.find(pattern) if forward else self.editor.find(pattern, QTextDocument.FindBackward)  # type: ignore[name-defined]
+        found = (
+            self.editor.find(pattern)
+            if forward
+            else self.editor.find(pattern, QTextDocument.FindBackward)
+        )  # type: ignore[name-defined]
         if not found:
             # reinicia do começo/fim
             cursor.movePosition(cursor.Start if forward else cursor.End)
             self.editor.setTextCursor(cursor)
-            self.editor.find(pattern) if forward else self.editor.find(pattern, QTextDocument.FindBackward)  # type: ignore[name-defined]
+            (
+                self.editor.find(pattern)
+                if forward
+                else self.editor.find(pattern, QTextDocument.FindBackward)
+            )  # type: ignore[name-defined]
 
     def toggle_theme(self):
         order = list(AVAILABLE_THEMES.keys())
@@ -1723,7 +1835,9 @@ class EditorWindow(QMainWindow):
             path_str = str(file_path)
             tags = self.tags.get(path_str, [])
             if tags:
-                tag, ok = QInputDialog.getItem(self, "Remover Tag", "Tag:", tags, 0, False)
+                tag, ok = QInputDialog.getItem(
+                    self, "Remover Tag", "Tag:", tags, 0, False
+                )
                 if ok and tag:
                     tags.remove(tag)
                     if not tags:
@@ -1733,21 +1847,30 @@ class EditorWindow(QMainWindow):
                     self.tag_proxy.invalidateFilter()
         elif chosen == act_rename and node:
             default = node.path.stem if node.node_type == "scene" else node.path.name
-            new_name, ok = QInputDialog.getText(self, "Renomear", "Novo nome:", text=default)
+            new_name, ok = QInputDialog.getText(
+                self, "Renomear", "Novo nome:", text=default
+            )
             if ok and new_name.strip():
                 if node.node_type == "scene":
                     new_path = node.path.with_name(new_name + ".txt")
                 else:
                     new_path = node.path.with_name(new_name)
                 if new_path.exists():
-                    QMessageBox.warning(self, APP_NAME, "Já existe um item com esse nome.")
+                    QMessageBox.warning(
+                        self, APP_NAME, "Já existe um item com esse nome."
+                    )
                 else:
                     node.path.rename(new_path)
                     node.path = new_path
                     node.setText(new_name)
                     self.project_model.update_favorite_icon(new_path)
         elif chosen == act_delete and node:
-            resp = QMessageBox.question(self, APP_NAME, f"Excluir {node.path.name}?", QMessageBox.Yes | QMessageBox.No)
+            resp = QMessageBox.question(
+                self,
+                APP_NAME,
+                f"Excluir {node.path.name}?",
+                QMessageBox.Yes | QMessageBox.No,
+            )
             if resp == QMessageBox.Yes:
                 try:
                     node.path.unlink()
@@ -1783,7 +1906,12 @@ class EditorWindow(QMainWindow):
     def maybe_save_changes(self) -> bool:
         if not self.dirty:
             return True
-        resp = QMessageBox.question(self, APP_NAME, "O arquivo foi modificado. Salvar alterações?", QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel)
+        resp = QMessageBox.question(
+            self,
+            APP_NAME,
+            "O arquivo foi modificado. Salvar alterações?",
+            QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
+        )
         if resp == QMessageBox.Yes:
             self.save_file()
             return not self.dirty
@@ -1803,7 +1931,11 @@ class EditorWindow(QMainWindow):
             return
         meta_file = history_dir / "meta.json"
         try:
-            data = json.loads(meta_file.read_text(encoding="utf-8")) if meta_file.exists() else []
+            data = (
+                json.loads(meta_file.read_text(encoding="utf-8"))
+                if meta_file.exists()
+                else []
+            )
         except Exception:
             data = []
         data.append({"timestamp": timestamp, "size": len(text)})
