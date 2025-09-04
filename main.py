@@ -10,7 +10,7 @@ from config import settings
 from shared.fs_utils import ensure_dir
 from shared.i18n import t
 from shared.logging import get_logger
-from shared.utils import load_config
+from shared.config import load_config
 from ui.editor import EditorWindow
 from ui.theme import apply_theme, load_theme
 
@@ -31,7 +31,7 @@ def handle_exception(exc_type, exc, tb):
 def detect_recent_workspace() -> Path:
     """Return the most recently used workspace."""
     cfg = load_config()
-    workspace = Path(cfg.get("workspace", str(settings.workspace)))
+    workspace = Path(cfg.get("last_project", str(settings.workspace)))
     ensure_dir(workspace)
     settings.workspace = workspace
     return workspace
