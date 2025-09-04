@@ -1,3 +1,5 @@
+"""Date manipulation utilities."""
+
 from __future__ import annotations
 
 from datetime import date, datetime
@@ -16,10 +18,14 @@ def format_date(d: date, fmt: str = "%Y-%m-%d") -> str:
 def days_between(a: date | str, b: date | str, fmt: str = "%Y-%m-%d") -> int:
     """Return the absolute difference in days between *a* and *b*.
 
-    If a or b are strings they are parsed using ``parse_date`` with *fmt*.
+    If ``a`` or ``b`` are strings they are parsed using ``parse_date`` with *fmt*.
     """
     if isinstance(a, str):
         a = parse_date(a, fmt)
     if isinstance(b, str):
         b = parse_date(b, fmt)
     return abs((b - a).days)
+
+
+__all__ = ["parse_date", "format_date", "days_between"]
+
