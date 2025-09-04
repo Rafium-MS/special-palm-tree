@@ -2,7 +2,23 @@
 from __future__ import annotations
 import sqlite3
 from typing import List
-from lingua_models import Language, Lexeme, WordForm, Rule, LexiconMap, to_json, from_json
+# Import models using a relative import so that this module can be
+# loaded regardless of how the package is executed.  Previously the
+# code relied on the top-level `lingua_models` name being available on
+# `sys.path`, which isn't the case when running the project as a
+# package (e.g. `python -m ui.editor`).  Using a relative import ensures
+# the models are resolved from within the `ui` package itself and fixes
+# `ModuleNotFoundError: No module named 'lingua_models'` raised when
+# launching the application.
+from .lingua_models import (
+    Language,
+    Lexeme,
+    WordForm,
+    Rule,
+    LexiconMap,
+    to_json,
+    from_json,
+)
 
 SCHEMA_SQL = """(cole o SQL acima)"""
 
