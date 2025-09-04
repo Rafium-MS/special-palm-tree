@@ -8,5 +8,5 @@ data/__pycache__/
 /shared/__pycache__
 /ui/__pycache__
 /core/__pycache__
-ui/editor.py
 /core/timeline/__pycache__
+/core/economia/__pycache__
