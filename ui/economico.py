@@ -400,7 +400,10 @@ class PageResumo(QWidget):
 
     def _plot_prod_consumo(self) -> None:
         """Exibe gráfico simples produção × consumo usando Matplotlib."""
-        ax = self.fig.clear().add_subplot(111)
+        # ``Figure.clear()`` retorna ``None``, portanto a criação do ``Axes`` deve
+        # ocorrer em uma chamada separada após limpar a figura.
+        self.fig.clear()
+        ax = self.fig.add_subplot(111)
 
         def _parse(txt: str) -> float:
             m = re.search(r"-?\d+(?:[.,]\d+)?", txt)
