@@ -77,7 +77,7 @@ from shared.text_utils import (
     read_file_text,
     search_workspace,
 )
-from shared.utils import load_config, save_config
+from shared.config import load_config, save_config, get_project_config
 from core.io import export_text, export_project_zip, import_batch
 from .demografico_medieval import MainWindow as DemograficoWindow
 from .personagens import MainWindow as PersonagensWindow
@@ -623,17 +623,21 @@ class EditorWindow(QMainWindow):
         self.setWindowTitle(APP_NAME)
         self.resize(1570, 820)
 
-        cfg = load_config()
-        workspace = Path(cfg.get("workspace", str(DEFAULT_WORKSPACE)))
+        self.cfg = load_config()
+        workspace = Path(self.cfg.get("last_project", str(DEFAULT_WORKSPACE)))
         ensure_dir(workspace)
         self.workspace = workspace
         self.project_id = self.workspace.name
         self.user_id = getpass.getuser()
+        self.project_cfg = get_project_config(self.cfg, self.project_id)
         self.theme = load_theme(self.project_id, self.user_id)
 
-        self.favorites: set[str] = set(cfg.get("favorites", []))
-        self.tags: dict[str, list[str]] = cfg.get("tags", {})
-        self.shortcuts: dict[str, str] = cfg.get("shortcuts", {})
+        self.favorites: set[str] = set(self.project_cfg.get("favorites", []))
+        self.tags: dict[str, list[str]] = self.project_cfg.get("tags", {})
+        self.shortcuts: dict[str, str] = self.project_cfg.get("shortcuts", {})
+        self.open_panels: list[str] = self.project_cfg.get("open_panels", [])
+        self.editor_width = int(self.project_cfg.get("editor_width", 0))
+        self.last_session = self.project_cfg.get("last_session", {})
         self.focus_mode = False
         self.icon_favorite = QIcon.fromTheme("star")
         if self.icon_favorite.isNull():
@@ -657,15 +661,15 @@ class EditorWindow(QMainWindow):
         self.dirty = False
 
         # Daily writing stats
-        self.daily_word_goal = int(cfg.get("daily_word_goal", 0))
+        self.daily_word_goal = int(self.project_cfg.get("daily_word_goal", 0))
         self.daily_words_written = 0
         self.last_word_count = 0
         self.stats_date = datetime.now().date()
 
         # Autosave
         self.autosave_enabled = True
-        self.autosave_interval = int(cfg.get("autosave_interval", 2000))
-        autosave_dir = cfg.get("autosave_dir")
+        self.autosave_interval = int(self.project_cfg.get("autosave_interval", 2000))
+        autosave_dir = self.project_cfg.get("autosave_dir")
         self.autosave_dir = Path(autosave_dir) if autosave_dir else (self.workspace / AUTOSAVE_DIRNAME)
         ensure_dir(self.autosave_dir)
         self.autosave_timer = QTimer(self)
@@ -677,8 +681,8 @@ class EditorWindow(QMainWindow):
         self._set_dirty(False)
 
         # Apply saved font settings
-        font_family = cfg.get("font_family")
-        font_size = cfg.get("font_size")
+        font_family = self.project_cfg.get("font_family")
+        font_size = self.project_cfg.get("font_size")
         if font_family or font_size:
             f = self.editor.font()
             if font_family:
@@ -690,7 +694,7 @@ class EditorWindow(QMainWindow):
                     pass
             self.editor.setFont(f)
 
-        line_spacing = float(cfg.get("line_spacing", 1.0))
+        line_spacing = float(self.project_cfg.get("line_spacing", 1.0))
         self.set_line_spacing(line_spacing)
 
         apply_theme(self.theme, self.project_id, self.user_id)
@@ -1205,22 +1209,21 @@ class EditorWindow(QMainWindow):
         if not ok:
             return
         self.editor.setFont(font)
-        cfg = load_config()
-        cfg["font_family"] = font.family()
-        cfg["font_size"] = font.pointSize()
+        self.project_cfg["font_family"] = font.family()
+        self.project_cfg["font_size"] = font.pointSize()
         spacing, ok = QInputDialog.getDouble(
             self,
             "Espaçamento entre linhas",
             "Múltiplo de espaçamento:",
-            float(cfg.get("line_spacing", 1.0)),
+            float(self.project_cfg.get("line_spacing", 1.0)),
             0.5,
             3.0,
             1,
         )
         if ok:
             self.set_line_spacing(spacing)
-            cfg["line_spacing"] = spacing
-        save_config(cfg)
+            self.project_cfg["line_spacing"] = spacing
+        save_config(self.cfg)
 
     def configure_autosave(self):
         interval, ok = QInputDialog.getInt(
@@ -1242,14 +1245,12 @@ class EditorWindow(QMainWindow):
         self.autosave_dir = Path(dir_path)
         ensure_dir(self.autosave_dir)
         self.autosave_timer.setInterval(self.autosave_interval)
-        cfg = load_config()
-        cfg["autosave_interval"] = self.autosave_interval
-        cfg["autosave_dir"] = dir_path
-        save_config(cfg)
+        self.project_cfg["autosave_interval"] = self.autosave_interval
+        self.project_cfg["autosave_dir"] = dir_path
+        save_config(self.cfg)
 
     def configure_daily_goal(self):
-        cfg = load_config()
-        current = int(cfg.get("daily_word_goal", self.daily_word_goal))
+        current = int(self.project_cfg.get("daily_word_goal", self.daily_word_goal))
         goal, ok = QInputDialog.getInt(
             self,
             "Meta diária de palavras",
@@ -1260,8 +1261,8 @@ class EditorWindow(QMainWindow):
         )
         if ok:
             self.daily_word_goal = goal
-            cfg["daily_word_goal"] = goal
-            save_config(cfg)
+            self.project_cfg["daily_word_goal"] = goal
+            save_config(self.cfg)
             if hasattr(self, "progress"):
                 self.progress.setRange(0, max(goal, 1))
             self._update_stats()
@@ -1271,6 +1272,14 @@ class EditorWindow(QMainWindow):
             checked = not self.sidebar.isVisible()
         self.sidebar.setVisible(checked)
         self.act_toggle_sidebar.setChecked(checked)
+        if checked:
+            if "sidebar" not in self.open_panels:
+                self.open_panels.append("sidebar")
+        else:
+            if "sidebar" in self.open_panels:
+                self.open_panels.remove("sidebar")
+        self.project_cfg["open_panels"] = self.open_panels
+        save_config(self.cfg)
 
     def toggle_focus_mode(self, checked=None):
         if checked is None:
@@ -1320,9 +1329,8 @@ class EditorWindow(QMainWindow):
         self.save_favorites()
 
     def save_favorites(self):
-        cfg = load_config()
-        cfg["favorites"] = list(self.favorites)
-        save_config(cfg)
+        self.project_cfg["favorites"] = list(self.favorites)
+        save_config(self.cfg)
 
     # Versões ------------------------------------------------------------
     def _refresh_versions_panel(self):
@@ -1358,9 +1366,8 @@ class EditorWindow(QMainWindow):
             self.tag_list.addItem(t)
 
     def save_tags(self):
-        cfg = load_config()
-        cfg["tags"] = self.tags
-        save_config(cfg)
+        self.project_cfg["tags"] = self.tags
+        save_config(self.cfg)
 
     def filter_tree_by_tag(self, tag: str):
         self.tag_filter_input.setText(tag)
@@ -1401,9 +1408,16 @@ class EditorWindow(QMainWindow):
             self.editor.clear()
             self._set_dirty(False)
             self.autosave_timer.stop()
-            cfg = load_config()
-            cfg["workspace"] = str(self.workspace)
-            save_config(cfg)
+            self.project_id = self.workspace.name
+            self.cfg["last_project"] = str(self.workspace)
+            self.project_cfg = get_project_config(self.cfg, self.project_id)
+            self.favorites = set(self.project_cfg.get("favorites", []))
+            self.tags = self.project_cfg.get("tags", {})
+            self.shortcuts = self.project_cfg.get("shortcuts", {})
+            self.open_panels = self.project_cfg.get("open_panels", [])
+            self.editor_width = int(self.project_cfg.get("editor_width", 0))
+            self.last_session = self.project_cfg.get("last_session", {})
+            save_config(self.cfg)
 
     def open_workspace_in_explorer(self):
         # Abre pasta no explorador do SO
@@ -1863,12 +1877,17 @@ class EditorWindow(QMainWindow):
             event.ignore()
             return
         # salva config
-        cfg = load_config()
-        cfg["workspace"] = str(self.workspace)
-        cfg["favorites"] = list(self.favorites)
-        cfg["shortcuts"] = self.shortcuts
-        cfg["line_spacing"] = getattr(self, "line_spacing", 1.0)
-        save_config(cfg)
+        self.cfg["last_project"] = str(self.workspace)
+        self.project_cfg["favorites"] = list(self.favorites)
+        self.project_cfg["shortcuts"] = self.shortcuts
+        self.project_cfg["line_spacing"] = getattr(self, "line_spacing", 1.0)
+        self.project_cfg["open_panels"] = self.open_panels
+        self.project_cfg["editor_width"] = self.editor.width()
+        self.project_cfg["last_session"] = {
+            "file": str(self.current_file) if self.current_file else "",
+            "cursor": self.editor.textCursor().position(),
+        }
+        save_config(self.cfg)
         event.accept()
 
 

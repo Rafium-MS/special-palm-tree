@@ -7,6 +7,7 @@ from PyQt5.QtWidgets import QApplication
 from config import settings
 from shared.constants import CONFIG_FILE
 from shared.theme_tokens import tokens as token_variables
+from shared.config import load_config, save_config
 
 _TOKENS_PATH = Path(__file__).with_name("tokens.json")
 with _TOKENS_PATH.open("r", encoding="utf-8") as fh:
@@ -83,6 +84,9 @@ def apply_theme(
 
     palette = TOKENS["themes"].get(theme, TOKENS["themes"]["light"])
     _save_theme_selection(project_id, user_id, theme)
+    cfg = load_config()
+    cfg.setdefault("ui", {})["theme"] = theme
+    save_config(cfg)
     app = QApplication.instance()
     if app:
         app.setStyleSheet(_build_stylesheet(palette))
